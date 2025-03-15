@@ -2,26 +2,44 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const config = require('../config/config');
 const schemaGenerator = require('./schemaGenerator');
+const swaggerUi = require('swagger-ui-express');
 
 class APIGenerator {
   constructor() {
     this.supabase = createClient(config.supabase.url, config.supabase.key);
-    // In-memory database for tables that don't exist in Supabase
-    this.inMemoryDb = new Map();
   }
 
   generateEndpoints(tableSchemas, userId = 'default') {
     const router = express.Router();
 
-    // Initialize in-memory databases for each table with prefixed names
-    tableSchemas.forEach(schema => {
-      this.inMemoryDb.set(schema.prefixedName || schema.name, []);
-    });
-
     // Add documentation endpoint
     router.get('/', (req, res) => {
+      // Add null checks to prevent errors
+      if (!tableSchemas || !Array.isArray(tableSchemas)) {
+        return res.json({
+          api: 'Dynamically Generated API',
+          error: 'Schema information is missing',
+          status: 'degraded'
+        });
+      }
+      
       const endpoints = tableSchemas.map(schema => {
+        // Add null check for schema
+        if (!schema) return null;
+        
         const tableName = schema.originalName || schema.name;
+        // Skip if no tableName
+        if (!tableName) return null;
+        
+        // Add null check for columns
+        const columns = schema.columns && Array.isArray(schema.columns) 
+          ? schema.columns.map(col => ({
+              name: col.name || 'unknown',
+              type: col.type || 'unknown',
+              constraints: col.constraints || []
+            }))
+          : [];
+          
         return {
           table: tableName,
           endpoints: [
@@ -32,18 +50,16 @@ class APIGenerator {
             { method: 'DELETE', path: `/${tableName}/:id`, description: 'Delete record' }
           ],
           schema: {
-            columns: schema.columns.map(col => ({
-              name: col.name,
-              type: col.type,
-              constraints: col.constraints
-            }))
+            columns: columns
           }
         };
-      });
+      }).filter(Boolean); // Filter out null values
 
       res.json({
         api: 'Dynamically Generated API',
-        tables: tableSchemas.map(t => t.originalName || t.name),
+        tables: tableSchemas
+          .filter(t => t && (t.originalName || t.name))
+          .map(t => t.originalName || t.name),
         userId: userId,
         endpoints
       });
@@ -60,60 +76,47 @@ class APIGenerator {
           const { page = 1, limit = 10, sort, order = 'asc', ...filters } = req.query;
           const offset = (parseInt(page) - 1) * parseInt(limit);
           
-          // Try Supabase first
-          const { data, error, count } = await this.supabase
+          // Build the query
+          let query = this.supabase
             .from(prefixedTableName)
             .select('*', { count: 'exact' })
-            .eq('user_id', userId) // Filter by userId
-            .range(offset, offset + parseInt(limit) - 1);
-          
-          // If Supabase table exists, use it
-          if (!error) {
-            return res.json({
-              data,
-              source: 'supabase',
-              pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: count || 0
-              }
-            });
-          }
-          
-          // If Supabase table doesn't exist, use in-memory data
-          const inMemoryData = this.inMemoryDb.get(prefixedTableName) || [];
-          
-          // Filter by userId first
-          let filteredData = inMemoryData.filter(item => item.user_id === userId);
+            .eq('user_id', userId);
           
           // Apply additional filters
           Object.entries(filters).forEach(([key, value]) => {
-            filteredData = filteredData.filter(item => 
-              item[key] && item[key].toString() === value);
+            query = query.eq(key, value);
           });
           
-          // Apply sorting
+          // Apply sorting if specified
           if (sort) {
-            filteredData.sort((a, b) => {
-              if (a[sort] < b[sort]) return order === 'asc' ? -1 : 1;
-              if (a[sort] > b[sort]) return order === 'asc' ? 1 : -1;
-              return 0;
-            });
+            const orderDirection = order.toLowerCase() === 'desc' ? false : true;
+            query = query.order(sort, { ascending: orderDirection });
           }
           
           // Apply pagination
-          const paginatedData = filteredData.slice(offset, offset + parseInt(limit));
+          query = query.range(offset, offset + parseInt(limit) - 1);
+          
+          // Execute the query
+          const { data, error, count } = await query;
+          
+          if (error) {
+            console.error(`Error fetching ${prefixedTableName}:`, error);
+            return res.status(500).json({ 
+              error: `Database error: ${error.message}`,
+              hint: 'Ensure the table exists and has the correct structure'
+            });
+          }
           
           res.json({
-            data: paginatedData,
-            source: 'memory',
+            data: data || [],
             pagination: {
               page: parseInt(page),
               limit: parseInt(limit),
-              total: filteredData.length
+              total: count || 0
             }
           });
         } catch (error) {
+          console.error(`Error in GET ${tableName}:`, error);
           res.status(500).json({ error: error.message });
         }
       });
@@ -121,7 +124,6 @@ class APIGenerator {
       // GET item by id - ensure it belongs to current userId
       router.get(`/${tableName}/:id`, async (req, res) => {
         try {
-          // Try Supabase first
           const { data, error } = await this.supabase
             .from(prefixedTableName)
             .select('*')
@@ -129,27 +131,18 @@ class APIGenerator {
             .eq('user_id', userId) // Ensure record belongs to current user
             .single();
           
-          // If Supabase table exists and record found, return it
-          if (!error && data) {
-            return res.json({
-              ...data,
-              source: 'supabase'
-            });
+          if (error) {
+            if (error.code === 'PGRST116') {
+              // No rows returned = not found
+              return res.status(404).json({ error: 'Record not found' });
+            }
+            console.error(`Error fetching ${prefixedTableName} by ID:`, error);
+            return res.status(500).json({ error: `Database error: ${error.message}` });
           }
           
-          // If Supabase failed, check in-memory
-          const inMemoryData = this.inMemoryDb.get(prefixedTableName) || [];
-          const item = inMemoryData.find(item => item.id === req.params.id && item.user_id === userId);
-          
-          if (!item) {
-            return res.status(404).json({ error: 'Not found' });
-          }
-          
-          res.json({
-            ...item,
-            source: 'memory'
-          });
+          res.json(data);
         } catch (error) {
+          console.error(`Error in GET ${tableName}/:id:`, error);
           res.status(500).json({ error: error.message });
         }
       });
@@ -157,44 +150,76 @@ class APIGenerator {
       // POST new item - automatically include userId
       router.post(`/${tableName}`, async (req, res) => {
         try {
-          // Add userId to the request body
-          const requestWithUserId = {
-            ...req.body,
-            user_id: userId
-          };
+          // Clone the request body to avoid modifying the original
+          const requestData = { ...req.body };
           
-          // Try Supabase first
+          // Only remove ID if it's one of our placeholder values
+          if (requestData.id === "uuid-generated-by-database" || 
+              requestData.id === "string" || 
+              requestData.id === "" || 
+              requestData.id === undefined) {
+            delete requestData.id;
+          }
+          
+          // Add userId to the request body
+          requestData.user_id = userId;
+          
+          // Add proper timestamps if not provided or if they're placeholder values
+          if (!requestData.created_at || requestData.created_at === "string") {
+            requestData.created_at = new Date().toISOString();
+          }
+          if (!requestData.updated_at || requestData.updated_at === "string") {
+            requestData.updated_at = new Date().toISOString();
+          }
+          
+          // Clean any placeholder values for foreign keys
+          Object.keys(requestData).forEach(key => {
+            // Only clean placeholder values, keep valid values
+            if (requestData[key] === "string" || 
+                (key.endsWith('_id') && key !== 'user_id' && 
+                 (requestData[key] === "00000000-0000-0000-0000-000000000000" || 
+                  requestData[key] === ""))) {
+              
+              if (key.endsWith('_id') && key !== 'user_id') {
+                // For foreign keys, use null instead of empty values
+                requestData[key] = null;
+              } else if (key !== 'created_at' && key !== 'updated_at' && key !== 'id') {
+                // For regular string fields
+                requestData[key] = '';
+              }
+            }
+          });
+          
+          console.log(`Adding record to ${prefixedTableName}:`, requestData);
+          
+          // Make sure we're inserting into the exact prefixed table
           const { data, error } = await this.supabase
             .from(prefixedTableName)
-            .insert(requestWithUserId)
+            .insert(requestData)
             .select();
           
-          // If Supabase table exists, use it
-          if (!error) {
-            return res.status(201).json({
-              ...data[0],
-              source: 'supabase'
+          if (error) {
+            console.error(`Error creating record in ${prefixedTableName}:`, error);
+            
+            // Provide more detailed error message and debugging info
+            return res.status(500).json({ 
+              error: `Database error: ${error.message}`,
+              hint: 'Ensure the table exists and has the correct structure',
+              details: {
+                table: prefixedTableName,
+                requestData: requestData,
+                errorCode: error.code
+              }
             });
           }
           
-          // If Supabase failed, use in-memory
-          const newItem = {
-            ...requestWithUserId,
-            id: `${tableName}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          
-          const inMemoryData = this.inMemoryDb.get(prefixedTableName) || [];
-          inMemoryData.push(newItem);
-          this.inMemoryDb.set(prefixedTableName, inMemoryData);
-          
-          res.status(201).json({
-            ...newItem,
-            source: 'memory'
-          });
+          res.status(201).json(data[0]);
         } catch (error) {
-          res.status(500).json({ error: error.message });
+          console.error(`Error in POST ${tableName}:`, error);
+          res.status(500).json({ 
+            error: error.message, 
+            table: prefixedTableName 
+          });
         }
       });
 
@@ -221,37 +246,14 @@ class APIGenerator {
             .eq('user_id', userId) // Ensure we only update user's own record
             .select();
           
-          // If Supabase table exists and record updated, return it
-          if (!error && data && data.length > 0) {
-            return res.json({
-              ...data[0],
-              source: 'supabase'
-            });
+          if (error) {
+            console.error(`Error updating record in ${prefixedTableName}:`, error);
+            return res.status(500).json({ error: `Database error: ${error.message}` });
           }
           
-          // If Supabase failed, use in-memory
-          const inMemoryData = this.inMemoryDb.get(prefixedTableName) || [];
-          const index = inMemoryData.findIndex(item => item.id === req.params.id && item.user_id === userId);
-          
-          if (index === -1) {
-            return res.status(404).json({ error: 'Not found' });
-          }
-          
-          const updatedItem = {
-            ...inMemoryData[index],
-            ...req.body,
-            id: req.params.id, // Ensure ID doesn't change
-            updated_at: new Date().toISOString()
-          };
-          
-          inMemoryData[index] = updatedItem;
-          this.inMemoryDb.set(prefixedTableName, inMemoryData);
-          
-          res.json({
-            ...updatedItem,
-            source: 'memory'
-          });
+          res.json(data[0]);
         } catch (error) {
+          console.error(`Error in PUT ${tableName}/:id:`, error);
           res.status(500).json({ error: error.message });
         }
       });
@@ -259,52 +261,59 @@ class APIGenerator {
       // DELETE item - ensure it belongs to current userId
       router.delete(`/${tableName}/:id`, async (req, res) => {
         try {
-          // Try Supabase first
+          // Delete from Supabase with user_id check
           const { error } = await this.supabase
             .from(prefixedTableName)
             .delete()
             .eq('id', req.params.id)
             .eq('user_id', userId); // Ensure we only delete user's own record
           
-          // If Supabase table exists and no error, success
-          if (!error) {
-            return res.status(204).send();
+          if (error) {
+            console.error(`Error deleting record from ${prefixedTableName}:`, error);
+            return res.status(500).json({ error: `Database error: ${error.message}` });
           }
-          
-          // If Supabase failed, use in-memory
-          const inMemoryData = this.inMemoryDb.get(prefixedTableName) || [];
-          const index = inMemoryData.findIndex(item => item.id === req.params.id && item.user_id === userId);
-          
-          if (index === -1) {
-            return res.status(404).json({ error: 'Not found' });
-          }
-          
-          inMemoryData.splice(index, 1);
-          this.inMemoryDb.set(prefixedTableName, inMemoryData);
           
           res.status(204).send();
         } catch (error) {
+          console.error(`Error in DELETE ${tableName}/:id:`, error);
           res.status(500).json({ error: error.message });
         }
       });
     });
 
-    // Add Swagger UI endpoint
-    router.get('/swagger', (req, res) => {
+    // Add Swagger JSON endpoint 
+    router.get('/swagger.json', (req, res) => {
       const swaggerSpec = this._generateSwaggerSpec(tableSchemas, userId);
       res.json(swaggerSpec);
     });
+
+    // Mount the Swagger UI
+    router.use('/docs', swaggerUi.serve);
+    router.get('/docs', swaggerUi.setup(null, {
+      swaggerUrl: './swagger.json',
+      explorer: true
+    }));
 
     return router;
   }
 
   // Add method to generate Swagger spec
   _generateSwaggerSpec(tableSchemas, userId) {
+    // Safety check - ensure tableSchemas is an array
+    if (!tableSchemas || !Array.isArray(tableSchemas)) {
+      console.error('Invalid tableSchemas:', tableSchemas);
+      tableSchemas = []; // Use empty array as fallback
+    }
+    
     const paths = {};
     
     // For each table, create swagger paths
     tableSchemas.forEach(schema => {
+      // Safety check for schema
+      if (!schema) return;
+      
       const tableName = schema.originalName || schema.name;
+      if (!tableName) return; // Skip if no table name
       
       // GET collection path
       paths[`/${tableName}`] = {
@@ -424,17 +433,77 @@ class APIGenerator {
     // Generate schema components from table schemas
     const schemas = {};
     tableSchemas.forEach(schema => {
+      // Safety check for schema and columns
+      if (!schema || !schema.columns || !Array.isArray(schema.columns)) return;
+      
       const tableName = schema.originalName || schema.name;
+      if (!tableName) return; // Skip if no table name
       
       const properties = {};
       schema.columns.forEach(col => {
-        let type = 'string';
-        if (col.type.includes('int')) type = 'integer';
-        else if (col.type.includes('float') || col.type.includes('decimal')) type = 'number';
-        else if (col.type.includes('bool')) type = 'boolean';
+        // Safety check for column
+        if (!col || !col.name) return;
         
-        properties[col.name] = { type };
+        let type = 'string';
+        let format = undefined;
+        let example = undefined;
+        
+        // Handle different data types
+        if (col.type.includes('int')) {
+          type = 'integer';
+          example = 1;
+        } else if (col.type.includes('float') || col.type.includes('decimal')) {
+          type = 'number';
+          example = 1.5;
+        } else if (col.type.includes('bool')) {
+          type = 'boolean';
+          example = true;
+        } else if (col.type.includes('timestamp') || col.type.includes('date')) {
+          type = 'string';
+          format = 'date-time';
+          example = new Date().toISOString();
+        } else if (col.type.includes('uuid') || col.name === 'id') {
+          // Don't include example for id fields - they're generated by the database
+          if (col.name === 'id') {
+            // Exclude ID field from example since it's auto-generated
+            type = 'string';
+            format = 'uuid';
+            example = undefined; // No example needed for auto-generated field
+          } else {
+            type = 'string'; 
+            format = 'uuid';
+            // Only include UUID example for non-auto-generated fields
+            example = col.name.endsWith('_id') ? null : undefined;
+          }
+        } else {
+          // Regular string field
+          example = col.name; // Use the field name as example
+        }
+        
+        // Set properties with better examples
+        properties[col.name] = { 
+          type,
+          ...(format ? { format } : {}),
+          ...(example !== undefined ? { example } : {})
+        };
       });
+      
+      // Add specific examples for timestamp fields
+      if (!properties['created_at']) {
+        properties['created_at'] = { 
+          type: 'string', 
+          format: 'date-time',
+          example: new Date().toISOString()
+        };
+      }
+      
+      if (!properties['updated_at']) {
+        properties['updated_at'] = { 
+          type: 'string', 
+          format: 'date-time',
+          example: new Date().toISOString()  
+        };
+      }
       
       schemas[tableName] = {
         type: 'object',
@@ -442,21 +511,22 @@ class APIGenerator {
       };
     });
     
+    // Return with proper fallbacks
     return {
-      openapi: '3.0.0',
+      openapi: "3.0.0",
       info: {
-        title: `API for User ${userId}`,
-        version: '1.0.0',
+        title: `API for User ${userId || 'default'}`,
+        version: "1.0.0",
         description: 'API generated by Backlify'
       },
       servers: [
         {
-          url: '/api'
+          url: '/'
         }
       ],
-      paths,
+      paths: paths || {},
       components: {
-        schemas
+        schemas: schemas || {}
       }
     };
   }

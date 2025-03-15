@@ -144,14 +144,23 @@ GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
   async _addSampleData(tableSchema, userId) {
     const { name } = tableSchema;
     
-    // Generate sample data SQL
-    const insertSQL = this._generateSampleDataSQL(tableSchema, userId);
-    if (!insertSQL) {
-      console.log(`No sample data to add for ${name}`);
-      return { success: true, message: 'No sample data to add' };
+    try {
+      // Generate sample data SQL
+      const insertSQL = this._generateSampleDataSQL(tableSchema, userId);
+      if (!insertSQL) {
+        console.log(`No sample data to add for ${name}`);
+        return { success: true, message: 'No sample data to add' };
+      }
+      
+      return await this._executeSql(insertSQL, `Adding sample data to ${name}`);
+    } catch (error) {
+      console.error(`Error adding sample data to ${name}:`, error);
+      // Don't fail the whole process if sample data insertion fails
+      return { 
+        success: false, 
+        message: `Sample data insertion failed: ${error.message}` 
+      };
     }
-    
-    return await this._executeSql(insertSQL, `Adding sample data to ${name}`);
   }
 
   async _executeSql(sql, operation) {
@@ -354,7 +363,7 @@ $$;
   }
 
   _generateSampleDataSQL(tableSchema, userId) {
-    // Direct table name (already prefixed)
+    // Similar safety checks and better foreign key handling
     const { name, columns } = tableSchema;
     
     // Create sample values for each column
@@ -370,10 +379,20 @@ $$;
       } else if (col.name === 'user_id') {
         columnValues[col.name] = `'${userId}'`;
       } else if (col.name.endsWith('_id') && col.name !== 'user_id') {
-        // This is likely a foreign key, we'll handle it specially
+        // Check if the target table exists before creating a foreign key reference
         const targetTable = col.name.replace('_id', '');
-        // Use quoted identifiers
-        columnValues[col.name] = `(SELECT id FROM "${userId}_${targetTable}" LIMIT 1)`;
+        const targetTableName = `${userId}_${targetTable}`;
+        
+        // Instead of a direct reference that might fail, use a safer approach
+        columnValues[col.name] = `(SELECT id FROM "${targetTableName}" LIMIT 1)`;
+        
+        // Add a fallback in case the target table doesn't exist
+        columnValues[col.name] = `
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${targetTableName}')
+            THEN (SELECT id FROM "${targetTableName}" LIMIT 1)
+            ELSE NULL
+          END`;
       } else if (col.type.includes('varchar') || col.type.includes('text')) {
         columnValues[col.name] = `'Sample ${col.name} for ${name}'`;
       } else if (col.type.includes('int') || col.type.includes('float')) {

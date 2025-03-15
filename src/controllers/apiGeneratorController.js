@@ -179,67 +179,89 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
   async generateAPI(req, res) {
     try {
       const { prompt, userId = 'default' } = req.body;
-
-      if (!prompt) {
-        return res.status(400).json({ error: 'Prompt is required' });
-      }
-
-      // Use the userId from the request or fall back to a default value
-      // This ensures we always have a valid ID for table prefixing
-      const safeUserId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'default';
-
-      console.log(`Generating API for user: ${safeUserId}`);
-
-      // Step 1: Analyze the request using Mistral AI
-      console.log('Analyzing request with Mistral AI...');
-      const analysis = await mistralService.analyzeRequest(prompt);
-
-      // Step 2: Generate database tables using schema generator with userId
-      console.log('Generating database schemas...');
-      const tables = await schemaGenerator.generateSchemas(analysis, safeUserId);
-
-      // Step 3: Create API endpoints based on the schema
-      console.log('Creating API endpoints...');
-      const router = apiGenerator.generateEndpoints(analysis.tables, safeUserId);
-
-      // Step 4: Publish the API
-      console.log('Publishing API...');
-      const apiId = apiPublisher.publishAPI(router);
-
-      // Generate SQL for documentation/backup
-      const sql = this.generateSQL(analysis.tables, safeUserId);
       
-      // Store the generated API details
-      this.generatedApis.set(apiId, {
+      console.log(`Generating API for prompt: "${prompt}" and user: ${userId}`);
+      
+      // Analyze prompt with Mistral AI
+      console.log('Analyzing prompt with Mistral AI...');
+      const analysisResult = await mistralService.analyzeRequest(prompt);
+      
+      // Generate database schema
+      console.log('Generating database schema...');
+      const createdTables = await schemaGenerator.generateSchemas(analysisResult, userId);
+      
+      // Create API endpoints
+      console.log('Creating API endpoints...');
+      const router = apiGenerator.generateEndpoints(createdTables, userId);
+      
+      // Publish API
+      console.log('Publishing API...');
+      const apiId = apiPublisher.publishAPI(router, {
         prompt,
-        schema: analysis,
-        tables,
-        sql,
-        userId: safeUserId,
+        userId,
+        tables: createdTables,
         createdAt: new Date().toISOString()
       });
-
-      // Return success response with schema and API details
-      res.status(201).json({
-        success: true,
-        message: 'API successfully generated',
+      
+      // Store in memory for quick access
+      this.generatedApis.set(apiId, {
+        prompt,
+        userId,
+        tables: createdTables,
         apiId,
-        schema: analysis,
-        tables,
-        apiUrl: `/api/${apiId}`,
-        swaggerUrl: `/api/${apiId}/docs`,
-        note: `Tables have been automatically created in Supabase with prefix '${safeUserId}_'.`
+        sql: analysisResult.sql || ''
+      });
+      
+      res.json({
+        message: 'API created successfully',
+        apiId,
+        documentation: `/api/${apiId}/docs`,
+        swagger: `/api/${apiId}/swagger.json`,
+        tables: createdTables.map(t => t.originalName || t.name)
       });
     } catch (error) {
-      console.error('API generation failed:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
+      console.error('Error generating API:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+  
+  // Add method to regenerate API
+  async regenerateAPI(metadata) {
+    try {
+      const { prompt, userId, tables } = metadata;
+      
+      // Validate tables data
+      if (!tables || !Array.isArray(tables)) {
+        console.error('Invalid tables data for API regeneration:', tables);
+        return null;
+      }
+      
+      console.log(`Regenerating API for prompt: "${prompt}" and user: ${userId}`);
+      
+      // Ensure each table has the required properties
+      const validTables = tables.filter(table => {
+        // Each table must have a name and columns
+        return table && table.name && table.columns && Array.isArray(table.columns);
       });
+      
+      if (validTables.length === 0) {
+        console.error('No valid tables found in metadata');
+        return null;
+      }
+      
+      console.log(`Found ${validTables.length} valid tables to restore`);
+      
+      // Create API endpoints from valid tables
+      console.log('Recreating API endpoints...');
+      const router = apiGenerator.generateEndpoints(validTables, userId);
+      
+      return router;
+    } catch (error) {
+      console.error('Error regenerating API:', error);
+      return null;
     }
   }
 
-  // Get SQL for an existing API
   getSQL(req, res) {
     const { apiId } = req.params;
     
@@ -249,8 +271,9 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
     
     const api = this.generatedApis.get(apiId);
     
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(api.sql);
+    res.json({
+      sql: api.sql
+    });
   }
 }
 
