@@ -9,40 +9,56 @@ class APIGeneratorController {
   }
 
   // Helper method to generate SQL
-  generateSQL(schemas, userId) {
-    const schemaName = `user_${userId}`;
+  generateSQL(tables, userId) {
+    // Remove schema name prefix, use table name prefixes instead
     
     let sql = `-- Generated SQL for Backlify API
 -- Generated at: ${new Date().toISOString()}
--- Schema: ${schemaName}
+-- User: ${userId}
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create schema for this user
-CREATE SCHEMA IF NOT EXISTS ${schemaName};
-
 `;
 
     // First create all tables without relationships
-    schemas.forEach(schema => {
-      sql += this.generateTableSQL(schema, userId);
+    tables.forEach(schema => {
+      // Add userId to table name
+      const tableName = `${userId}_${schema.name}`;
+      const modifiedSchema = {...schema, name: tableName};
+      
+      sql += this.generateTableSQL(modifiedSchema, userId);
       sql += '\n\n';
     });
 
     // Then add all foreign key constraints
-    schemas.forEach(schema => {
+    tables.forEach(schema => {
       if (schema.relationships && schema.relationships.length > 0) {
-        sql += this.generateRelationshipsSQL(schema);
+        // Add userId to table name for relationships
+        const tableName = `${userId}_${schema.name}`;
+        const modifiedSchema = {
+          ...schema, 
+          name: tableName,
+          relationships: schema.relationships.map(rel => ({
+            ...rel,
+            targetTable: `${userId}_${rel.targetTable}`
+          }))
+        };
+        
+        sql += this.generateRelationshipsSQL(modifiedSchema);
         sql += '\n\n';
       }
     });
 
     // Add sample data for each table
     sql += `-- Insert sample data\n`;
-    schemas.forEach(schema => {
-      sql += this.generateSampleDataSQL(schema);
+    tables.forEach(schema => {
+      // Add userId to table name for sample data
+      const tableName = `${userId}_${schema.name}`;
+      const modifiedSchema = {...schema, name: tableName};
+      
+      sql += this.generateSampleDataSQL(modifiedSchema, userId);
       sql += '\n\n';
     });
 
@@ -51,9 +67,8 @@ CREATE SCHEMA IF NOT EXISTS ${schemaName};
 
   // Generate table SQL without relationships
   generateTableSQL(tableSchema, userId) {
-    const schemaName = `user_${userId}`;
     const { name, columns, relationships = [] } = tableSchema;
-    const fullTableName = `${schemaName}.${name}`;
+    const fullTableName = name;
 
     // Generate column definitions
     const columnDefs = columns.map(col => {
@@ -170,7 +185,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       }
 
       // Use the userId from the request or fall back to a default value
-      // This ensures we always have a valid schema name
+      // This ensures we always have a valid ID for table prefixing
       const safeUserId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'default';
 
       console.log(`Generating API for user: ${safeUserId}`);
@@ -179,7 +194,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       console.log('Analyzing request with Mistral AI...');
       const analysis = await mistralService.analyzeRequest(prompt);
 
-      // Step 2: Generate database schemas using the user's schema
+      // Step 2: Generate database tables using schema generator with userId
       console.log('Generating database schemas...');
       const tables = await schemaGenerator.generateSchemas(analysis, safeUserId);
 
@@ -212,8 +227,8 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
         schema: analysis,
         tables,
         apiUrl: `/api/${apiId}`,
-        userSchema: `user_${safeUserId}`,
-        note: `Tables have been automatically created in Supabase under the schema 'user_${safeUserId}'.`
+        swaggerUrl: `/api/${apiId}/docs`,
+        note: `Tables have been automatically created in Supabase with prefix '${safeUserId}_'.`
       });
     } catch (error) {
       console.error('API generation failed:', error);

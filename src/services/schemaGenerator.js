@@ -11,55 +11,74 @@ class SchemaGenerator {
 
   async generateSchemas(analysisResult, userId = 'default') {
     const createdTables = [];
-    const schemaName = `user_${userId}`;
-
+    
     try {
       // First, make sure we have the execute_sql function
       await this._ensureSqlFunction();
       
-      // Create schema for this user
-      await this._createSchema(schemaName);
+      // Make a deep copy of the tables to avoid modifying the original
+      const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
       
-      // Process tables in order to handle dependencies
-      for (const table of analysisResult.tables) {
-        // Store schema in memory
-        this.schemas.set(table.name, table);
+      console.log("Original tables structure:", JSON.stringify(tablesData, null, 2));
+      
+      // First pass: Create all tables with all columns including FK columns
+      console.log("First pass: Creating all tables...");
+      for (const table of tablesData) {
+        // Add userId prefix to table name
+        const prefixedTableName = `${userId}_${table.name}`;
+        const originalName = table.name;
+        table.name = prefixedTableName;
         
-        // Create table in Supabase under user's schema
+        // Store schema in memory with userId prefix
+        this.schemas.set(prefixedTableName, table);
+        
+        // Create table in Supabase in public schema with userId prefix
         const createResult = await this._createTable(table, userId);
         if (createResult.success) {
-          console.log(`Table ${table.name} created successfully in schema ${schemaName}`);
-          createdTables.push(table.name);
+          console.log(`Table ${prefixedTableName} created successfully`);
+          createdTables.push({ 
+            originalName: originalName,
+            prefixedName: prefixedTableName 
+          });
         } else {
-          console.error(`Failed to create table ${table.name}:`, createResult.message);
+          console.error(`Failed to create table ${prefixedTableName}:`, createResult.message);
           // Still add to list for API generation
-          createdTables.push(table.name);
+          createdTables.push({ 
+            originalName: originalName,
+            prefixedName: prefixedTableName 
+          });
         }
       }
 
-      // After all tables are created, add foreign key relationships
-      for (const table of analysisResult.tables) {
+      // Second pass: Add relationships after all tables exist
+      console.log("Second pass: Adding relationships...");
+      for (const table of tablesData) {
         if (table.relationships && table.relationships.length > 0) {
           for (const rel of table.relationships) {
-            await this._createRelationship(
-              table.name,
-              rel.targetTable,
+            // Update relationship to use prefixed table names
+            const result = await this._createRelationship(
+              table.name,  // Already prefixed
+              `${userId}_${rel.targetTable}`,
               rel.type,
               rel.sourceColumn,
-              rel.targetColumn,
+              rel.targetColumn || 'id',  // Default to id if not specified
               userId
             );
+            
+            console.log(`Relationship result: ${JSON.stringify(result)}`);
           }
         }
       }
 
-      // Add sample data
-      for (const table of analysisResult.tables) {
+      // Third pass: Add sample data
+      console.log("Third pass: Adding sample data...");
+      for (const table of tablesData) {
         await this._addSampleData(table, userId);
       }
 
       return createdTables;
     } catch (error) {
+      console.error("Schema generation error:", error);
       throw new Error(`Schema generation failed: ${error.message}`);
     }
   }
@@ -97,179 +116,139 @@ GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
     }
   }
 
-  async _createSchema(schemaName) {
-    try {
-      const createSchemaSQL = `CREATE SCHEMA IF NOT EXISTS ${schemaName}`;
-      console.log(`Creating schema: ${createSchemaSQL}`);
-      
-      const { data, error } = await this.supabase.rpc('execute_sql', {
-        sql: createSchemaSQL
-      });
-      
-      if (error) {
-        console.error(`Error creating schema ${schemaName}:`, error.message);
-        return { 
-          success: false, 
-          message: `Failed to create schema: ${error.message}`
-        };
-      }
-      
-      console.log(`Schema ${schemaName} created successfully`);
-      return { 
-        success: true, 
-        message: `Schema ${schemaName} created successfully`
-      };
-    } catch (error) {
-      console.error(`Error in creating schema:`, error);
-      return { 
-        success: false, 
-        message: `Failed to create schema: ${error.message}`
-      };
-    }
-  }
-
   async _createTable(tableSchema, userId) {
-    try {
-      const { name } = tableSchema;
-      const schemaName = `user_${userId}`;
-      
-      // Convert our schema to SQL with the user's schema
-      const createTableSQL = this._generateCreateTableSQL(name, tableSchema.columns, userId);
-      console.log(`Creating table ${name} in schema ${schemaName}`);
-      
-      // Execute the SQL using Supabase's SQL API
-      const { data, error } = await this.supabase.rpc('execute_sql', {
-        sql: createTableSQL
-      });
-      
-      if (error) {
-        console.error(`Error creating table ${name}:`, error.message);
-        return { 
-          success: false, 
-          message: `Failed to create table: ${error.message}`
-        };
-      }
-      
-      console.log(`Table ${name} created successfully in schema ${schemaName}`);
-      return { 
-        success: true, 
-        message: `Table ${name} created successfully in schema ${schemaName}`
-      };
-    } catch (error) {
-      console.error(`Error in _createTable:`, error);
-      return { 
-        success: false, 
-        message: `Failed to create table: ${error.message}`
-      };
-    }
+    const { name } = tableSchema;
+    
+    // Convert our schema to SQL
+    const createTableSQL = this._generateCreateTableSQL(name, tableSchema.columns);
+    
+    return await this._executeSql(createTableSQL, `Creating table ${name}`);
   }
 
-  async _createRelationship(sourceTable, targetTable, type, sourceColumn, targetColumn, userId) {
-    try {
-      const schemaName = `user_${userId}`;
-      const relationshipSQL = this._generateRelationshipSQL(
-        sourceTable,
-        targetTable,
-        type,
-        sourceColumn,
-        targetColumn,
-        userId
-      );
-
-      console.log(`Creating relationship in schema ${schemaName}`);
-      
-      // Execute the SQL
-      const { data, error } = await this.supabase.rpc('execute_sql', {
-        sql: relationshipSQL
-      });
-      
-      if (error) {
-        console.error(`Error creating relationship:`, error.message);
-        return { 
-          success: false, 
-          message: `Failed to create relationship: ${error.message}`
-        };
-      }
-      
-      console.log(`Relationship created successfully in schema ${schemaName}`);
-      return { 
-        success: true, 
-        message: `Relationship created successfully in schema ${schemaName}`
-      };
-    } catch (error) {
-      console.error(`Error in _createRelationship:`, error);
-      return { 
-        success: false, 
-        message: `Failed to create relationship: ${error.message}`
-      };
-    }
+  async _createRelationship(sourceTable, targetTable, type, sourceColumn, targetColumn) {
+    // Generate relationship SQL
+    const relationshipSQL = this._generateRelationshipSQL(
+      sourceTable,
+      targetTable,
+      type,
+      sourceColumn,
+      targetColumn
+    );
+    
+    return await this._executeSql(
+      relationshipSQL, 
+      `Creating relationship between ${sourceTable} and ${targetTable}`
+    );
   }
 
   async _addSampleData(tableSchema, userId) {
+    const { name } = tableSchema;
+    
+    // Generate sample data SQL
+    const insertSQL = this._generateSampleDataSQL(tableSchema, userId);
+    if (!insertSQL) {
+      console.log(`No sample data to add for ${name}`);
+      return { success: true, message: 'No sample data to add' };
+    }
+    
+    return await this._executeSql(insertSQL, `Adding sample data to ${name}`);
+  }
+
+  async _executeSql(sql, operation) {
     try {
-      const { name } = tableSchema;
-      const schemaName = `user_${userId}`;
+      console.log(`Executing SQL for ${operation}...`);
       
-      // Generate sample data SQL
-      const insertSQL = this._generateSampleDataSQL(tableSchema, userId);
-      if (!insertSQL) return { success: true, message: 'No sample data to add' };
-      
-      console.log(`Adding sample data to ${name} in schema ${schemaName}`);
-      
-      // Execute the SQL
+      // Execute the SQL using Supabase's SQL API
       const { data, error } = await this.supabase.rpc('execute_sql', {
-        sql: insertSQL
+        sql: sql
       });
       
       if (error) {
-        console.error(`Error adding sample data:`, error.message);
+        console.error(`Error in ${operation}:`, error.message);
+        console.error(`SQL that caused error:\n${sql}`);
         return { 
           success: false, 
-          message: `Failed to add sample data: ${error.message}`
+          message: `${operation} failed: ${error.message}`
         };
       }
       
-      console.log(`Sample data added to ${name} in schema ${schemaName} successfully`);
+      console.log(`${operation} completed successfully`);
       return { 
         success: true, 
-        message: `Sample data added to ${name} in schema ${schemaName} successfully`
+        message: `${operation} completed successfully`
       };
     } catch (error) {
-      console.error(`Error in _addSampleData:`, error);
+      console.error(`Exception in ${operation}:`, error);
+      console.error(`SQL that caused error:\n${sql}`);
       return { 
         success: false, 
-        message: `Failed to add sample data: ${error.message}`
+        message: `${operation} failed: ${error.message}`
       };
     }
   }
 
-  _generateCreateTableSQL(tableName, columns, userId) {
-    const schemaName = `user_${userId}`;
-    const fullTableName = `${schemaName}.${tableName}`;
+  _generateCreateTableSQL(tableName, columns) {
+    // Use the table name directly (it's already prefixed)
+    const fullTableName = tableName;
     
-    // First enable necessary extensions and create schema
+    // First enable necessary extensions
     let sql = `
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create schema for this user if it doesn't exist
-CREATE SCHEMA IF NOT EXISTS ${schemaName};
-
 `;
 
     // Drop the table if it exists
-    sql += `DROP TABLE IF EXISTS ${fullTableName} CASCADE;\n\n`;
+    sql += `DROP TABLE IF EXISTS "${fullTableName}" CASCADE;\n\n`;
     
     // Generate column definitions
     const columnDefinitions = columns.map(column => {
-      let colSql = `${column.name} ${column.type}`;
+      // Clean up the column data to avoid SQL syntax errors
+      const cleanedType = this._cleanSqlIdentifier(column.type);
       
+      // Start with column name and type
+      let colSql = `"${column.name}" ${cleanedType}`;
+      
+      // Handle constraints properly
       if (column.constraints) {
+        let constraintText = '';
+        
         if (Array.isArray(column.constraints)) {
-          colSql += ` ${column.constraints.join(' ')}`;
-        } else {
-          colSql += ` ${column.constraints}`;
+          // Process each constraint individually
+          column.constraints.forEach(constraint => {
+            if (typeof constraint === 'string') {
+              // Fix default value syntax - change "default: X" to "DEFAULT X"
+              if (constraint.toLowerCase().includes('default:')) {
+                const defaultValue = constraint.split(':')[1].trim();
+                // Replace CURRENT_TIMESTAMP with now()
+                const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
+                constraintText += ` DEFAULT ${pgValue}`;
+              } 
+              // Handle normal constraints but preserve foreign key information for later
+              else if (!constraint.toLowerCase().includes('foreign key')) {
+                constraintText += ` ${constraint}`;
+              }
+            }
+          });
+        } 
+        // Handle string constraints
+        else if (typeof column.constraints === 'string') {
+          const constraintStr = column.constraints;
+          
+          // Fix default value syntax
+          if (constraintStr.toLowerCase().includes('default:')) {
+            const defaultValue = constraintStr.split(':')[1].trim();
+            // Replace CURRENT_TIMESTAMP with now()
+            const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
+            constraintText += ` DEFAULT ${pgValue}`;
+          }
+          // Skip foreign keys but add other constraints
+          else if (!constraintStr.toLowerCase().includes('foreign key')) {
+            constraintText += ` ${constraintStr}`;
+          }
         }
+        
+        colSql += constraintText;
       }
       
       return colSql;
@@ -277,19 +256,27 @@ CREATE SCHEMA IF NOT EXISTS ${schemaName};
     
     // Add timestamps if not present
     if (!columns.find(col => col.name === 'created_at')) {
-      columnDefinitions.push('created_at timestamp with time zone DEFAULT now()');
+      columnDefinitions.push('"created_at" timestamp with time zone DEFAULT now()');
     }
     if (!columns.find(col => col.name === 'updated_at')) {
-      columnDefinitions.push('updated_at timestamp with time zone DEFAULT now()');
+      columnDefinitions.push('"updated_at" timestamp with time zone DEFAULT now()');
+    }
+    
+    // Add user_id column if not present
+    if (!columns.find(col => col.name === 'user_id')) {
+      columnDefinitions.push('"user_id" varchar(255) NOT NULL');
     }
     
     // Create the table
-    sql += `CREATE TABLE ${fullTableName} (\n  ${columnDefinitions.join(',\n  ')}\n);\n\n`;
+    sql += `CREATE TABLE "${fullTableName}" (\n  ${columnDefinitions.join(',\n  ')}\n);\n\n`;
     
-    // Add updated_at trigger
+    // Function name needs to be sanitized for SQL
+    const safeFunctionName = fullTableName.replace(/[^a-zA-Z0-9_]/g, '_');
+    
+    // Add updated_at trigger - make sure to quote identifiers
     sql += `
 -- Create updated_at trigger
-CREATE OR REPLACE FUNCTION ${schemaName}.update_modified_column_${tableName}() 
+CREATE OR REPLACE FUNCTION update_modified_column_${safeFunctionName}() 
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = now();
@@ -297,70 +284,128 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-DROP TRIGGER IF EXISTS set_timestamp_${tableName} ON ${fullTableName};
+DROP TRIGGER IF EXISTS set_timestamp_${safeFunctionName} ON "${fullTableName}";
 
-CREATE TRIGGER set_timestamp_${tableName}
-BEFORE UPDATE ON ${fullTableName}
+CREATE TRIGGER set_timestamp_${safeFunctionName}
+BEFORE UPDATE ON "${fullTableName}"
 FOR EACH ROW
-EXECUTE FUNCTION ${schemaName}.update_modified_column_${tableName}();
+EXECUTE FUNCTION update_modified_column_${safeFunctionName}();
 `;
 
+    // Debug the SQL being executed
+    console.log("Generated SQL:", sql);
+    
     return sql;
   }
 
-  _generateRelationshipSQL(sourceTable, targetTable, type, sourceColumn, targetColumn, userId) {
-    const schemaName = `user_${userId}`;
-    const constraintName = `fk_${sourceTable}_${sourceColumn}_${targetTable}`;
+  // Add a helper function to clean SQL identifiers
+  _cleanSqlIdentifier(identifier) {
+    if (!identifier) return '';
     
-    let sql = `ALTER TABLE ${schemaName}.${sourceTable} ADD CONSTRAINT ${constraintName} `;
-    sql += `FOREIGN KEY (${sourceColumn}) REFERENCES ${schemaName}.${targetTable}(${targetColumn}) `;
-    sql += `ON DELETE CASCADE;`;
+    // Replace any possibly dangerous characters
+    return identifier
+      .replace(/:/g, '')  // Remove colons
+      .replace(/;/g, '')  // Remove semicolons
+      .replace(/--/g, '') // Remove SQL comments
+      .trim();
+  }
+
+  _generateRelationshipSQL(sourceTable, targetTable, type, sourceColumn, targetColumn) {
+    // Use quoted identifiers and clean names
+    const constraintName = `fk_${sourceTable.replace(/[^a-zA-Z0-9_]/g, '_')}_${sourceColumn}_${targetTable.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    
+    // Debug
+    console.log(`Creating FK: ${sourceTable}.${sourceColumn} -> ${targetTable}.${targetColumn}`);
+    
+    // First check if the column exists, and add it if it doesn't
+    let sql = `
+-- First check if both tables exist and add column if needed
+DO $$
+BEGIN
+    -- Ensure tables exist
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${sourceTable}') AND 
+       EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${targetTable}') THEN
+       
+        -- Check if the column exists
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name = '${sourceTable}' AND column_name = '${sourceColumn}') THEN
+            -- Add the column if it doesn't exist
+            EXECUTE 'ALTER TABLE "${sourceTable}" ADD COLUMN "${sourceColumn}" uuid NOT NULL';
+        END IF;
+        
+        -- Add the foreign key constraint
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                      WHERE constraint_name = '${constraintName}') THEN
+            ALTER TABLE "${sourceTable}" 
+            ADD CONSTRAINT "${constraintName}" 
+            FOREIGN KEY ("${sourceColumn}") 
+            REFERENCES "${targetTable}" ("${targetColumn}") 
+            ON DELETE CASCADE;
+        END IF;
+    END IF;
+END
+$$;
+`;
+    
+    // Debug
+    console.log("Relationship SQL:", sql);
     
     return sql;
   }
 
   _generateSampleDataSQL(tableSchema, userId) {
-    const schemaName = `user_${userId}`;
-    const { name, columns, relationships = [] } = tableSchema;
+    // Direct table name (already prefixed)
+    const { name, columns } = tableSchema;
     
-    // Skip columns that should be auto-generated
-    const columnNames = columns
-      .filter(col => !((col.name === 'id' && col.type.includes('serial')) || 
-                       col.name === 'created_at' || 
-                       col.name === 'updated_at'))
-      .map(col => col.name);
-    
-    if (columnNames.length === 0) return null;
-    
-    // Generate values for each column
-    const values = columnNames.map(colName => {
-      const col = columns.find(c => c.name === colName);
-      
-      if (colName === 'id' && col.type.includes('uuid')) {
-        return 'uuid_generate_v4()';
+    // Create sample values for each column
+    const columnValues = {};
+    columns.forEach(col => {
+      if (col.name === 'id' && col.type.includes('uuid')) {
+        columnValues[col.name] = "uuid_generate_v4()";
+      } else if (col.name === 'id' && col.type.includes('serial')) {
+        // Skip serial IDs as they're auto-generated
+        return;
+      } else if (col.name === 'created_at' || col.name === 'updated_at') {
+        columnValues[col.name] = "now()";
+      } else if (col.name === 'user_id') {
+        columnValues[col.name] = `'${userId}'`;
+      } else if (col.name.endsWith('_id') && col.name !== 'user_id') {
+        // This is likely a foreign key, we'll handle it specially
+        const targetTable = col.name.replace('_id', '');
+        // Use quoted identifiers
+        columnValues[col.name] = `(SELECT id FROM "${userId}_${targetTable}" LIMIT 1)`;
       } else if (col.type.includes('varchar') || col.type.includes('text')) {
-        return `'Sample ${colName} for ${name}'`;
-      } else if (colName.endsWith('_id') && col.type.includes('uuid')) {
-        // This is likely a foreign key
-        const rel = relationships.find(r => r.sourceColumn === colName);
-        if (rel) {
-          return `(SELECT id FROM ${schemaName}.${rel.targetTable} LIMIT 1)`;
-        }
-        return 'uuid_generate_v4()';
-      } else if (col.type.includes('int')) {
-        return '1';
+        columnValues[col.name] = `'Sample ${col.name} for ${name}'`;
+      } else if (col.type.includes('int') || col.type.includes('float')) {
+        columnValues[col.name] = "1";
       } else if (col.type.includes('bool')) {
-        return 'true';
+        columnValues[col.name] = "true";
       } else if (col.type.includes('json')) {
-        return `'{}'::jsonb`;
+        columnValues[col.name] = "'{}'";
       } else if (col.type.includes('date') || col.type.includes('time')) {
-        return 'now()';
+        columnValues[col.name] = "now()";
       } else {
-        return 'null';
+        columnValues[col.name] = "null";
       }
     });
     
-    return `INSERT INTO ${schemaName}.${name} (${columnNames.join(', ')}) VALUES (${values.join(', ')});`;
+    // Make sure user_id is included
+    if (!columnValues['user_id']) {
+      columnValues['user_id'] = `'${userId}'`;
+    }
+    
+    // Create the insert statement
+    const columnNames = Object.keys(columnValues).filter(name => 
+      !name.includes('id') || !['serial', 'bigserial'].includes(columns.find(c => c.name === name)?.type)
+    );
+    
+    const values = columnNames.map(name => columnValues[name]);
+    
+    if (columnNames.length > 0) {
+      return `INSERT INTO "${name}" (${columnNames.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});`;
+    }
+    
+    return null;
   }
 
   // Get a schema by name
