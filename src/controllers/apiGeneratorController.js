@@ -6,6 +6,8 @@ const apiPublisher = require('../services/apiPublisher');
 class APIGeneratorController {
   constructor() {
     this.generatedApis = new Map();
+    // Add a mapping to track APIs by userId
+    this.userApiMapping = new Map();
   }
 
   // Helper method to generate SQL
@@ -190,34 +192,46 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       console.log('Generating database schema...');
       const createdTables = await schemaGenerator.generateSchemas(analysisResult, userId);
       
-      // Create API endpoints
+      // Deep clone the tables to prevent any shared references
+      const safeTableSchemas = JSON.parse(JSON.stringify(createdTables));
+      
+      // Create API endpoints with isolated schemas
       console.log('Creating API endpoints...');
-      const router = apiGenerator.generateEndpoints(createdTables, userId);
+      const router = apiGenerator.generateEndpoints(safeTableSchemas, userId);
       
-      // Publish API
-      console.log('Publishing API...');
-      const apiId = apiPublisher.publishAPI(router, {
+      // Create isolated metadata
+      const safeMetadata = {
         prompt,
         userId,
-        tables: createdTables,
+        tables: safeTableSchemas,
         createdAt: new Date().toISOString()
-      });
+      };
       
-      // Store in memory for quick access
-      this.generatedApis.set(apiId, {
+      // Publish API with safe metadata
+      console.log('Publishing API...');
+      const apiId = apiPublisher.publishAPI(router, safeMetadata);
+      
+      // Store in memory for quick access - use a deep clone
+      this.generatedApis.set(apiId, JSON.parse(JSON.stringify({
         prompt,
         userId,
-        tables: createdTables,
+        tables: safeTableSchemas,
         apiId,
         sql: analysisResult.sql || ''
-      });
+      })));
+      
+      // Add to user API mapping
+      if (!this.userApiMapping.has(userId)) {
+        this.userApiMapping.set(userId, new Set());
+      }
+      this.userApiMapping.get(userId).add(apiId);
       
       res.json({
         message: 'API created successfully',
         apiId,
         documentation: `/api/${apiId}/docs`,
         swagger: `/api/${apiId}/swagger.json`,
-        tables: createdTables.map(t => t.originalName || t.name)
+        tables: safeTableSchemas.map(t => t.originalName || t.name)
       });
     } catch (error) {
       console.error('Error generating API:', error);
@@ -228,7 +242,12 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
   // Add method to regenerate API
   async regenerateAPI(metadata) {
     try {
-      const { prompt, userId, tables } = metadata;
+      // Create a brand new deep clone of metadata
+      const safeMetadata = JSON.parse(JSON.stringify(metadata));
+      
+      // Get userId and tables from metadata
+      const userId = safeMetadata.userId || 'default';
+      const tables = safeMetadata.tables || [];
       
       // Validate tables data
       if (!tables || !Array.isArray(tables)) {
@@ -236,7 +255,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
         return null;
       }
       
-      console.log(`Regenerating API for prompt: "${prompt}" and user: ${userId}`);
+      console.log(`Regenerating API for user: "${userId}"`);
       
       // Ensure each table has the required properties
       const validTables = tables.filter(table => {
@@ -249,13 +268,12 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
         return null;
       }
       
-      console.log(`Found ${validTables.length} valid tables to restore`);
+      // Create a completely new instance of the API generator
+      // to ensure no shared state
+      const { generateEndpoints } = require('../services/apiGenerator');
       
-      // Create API endpoints from valid tables
-      console.log('Recreating API endpoints...');
-      const router = apiGenerator.generateEndpoints(validTables, userId);
-      
-      return router;
+      // Create API endpoints with isolated schemas
+      return generateEndpoints(validTables, userId);
     } catch (error) {
       console.error('Error regenerating API:', error);
       return null;
@@ -275,7 +293,28 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       sql: api.sql
     });
   }
+
+  // Add method to get all APIs for a specific user
+  getUserAPIs(userId) {
+    const userApis = this.userApiMapping.get(userId);
+    if (!userApis) {
+      return [];
+    }
+    
+    return Array.from(userApis).map(apiId => {
+      const api = this.generatedApis.get(apiId);
+      if (!api) return null;
+      
+      // Return a deep clone to avoid shared references
+      return JSON.parse(JSON.stringify({
+        apiId,
+        prompt: api.prompt,
+        tables: api.tables?.map(t => t.originalName || t.name) || [],
+        createdAt: api.createdAt || new Date().toISOString()
+      }));
+    }).filter(Boolean);
+  }
 }
 
-// Export the class itself, not an instance
-module.exports = APIGeneratorController; 
+// Export an instance, not the class
+module.exports = new APIGeneratorController(); 
