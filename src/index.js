@@ -4,6 +4,8 @@ const cors = require('cors');
 const APIGeneratorController = require('./controllers/apiGeneratorController');
 const apiPublisher = require('./services/apiPublisher');
 const swaggerUi = require('swagger-ui-express');
+const schemaRoutes = require('./routes/schemaRoutes');
+const { ensureCorsHeaders, setCorsHeaders } = require('./middleware/corsMiddleware');
 // Load environment variables
 dotenv.config();
 
@@ -11,7 +13,22 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+// Replace simple CORS setup with a more comprehensive configuration
+const corsOptions = {
+  origin: '*', // Allow requests from any origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Id', 'x-user-id', 'X-USER-ID'],
+  exposedHeaders: ['Content-Length', 'Content-Disposition'],
+  credentials: true,
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+
+// Apply custom CORS middleware for all routes
+app.use(ensureCorsHeaders);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -66,10 +83,15 @@ app.get('/api/:apiId/sql', (req, res) => {
   
   // Check if API exists
   if (!apiGeneratorController.generatedApis.has(apiId)) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
   // NOTE: User validation check removed to allow any user to access any API's SQL
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   // User owns API, proceed with getting SQL
   apiGeneratorController.getSQL(req, res);
@@ -79,6 +101,9 @@ app.get('/api/:apiId/sql', (req, res) => {
 app.get('/my-apis', (req, res) => {
   const userId = req.userId;
   const userApis = apiGeneratorController.getUserAPIs(userId);
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   res.json({
     userId,
@@ -92,6 +117,8 @@ app.use('/api/:apiId', (req, res, next) => {
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
@@ -103,6 +130,9 @@ app.use('/api/:apiId', (req, res, next) => {
   });
   
   // NOTE: User validation check removed to allow any user to access any API
+  
+  // Ensure CORS headers are set for this request
+  setCorsHeaders(res);
   
   // Store the apiId on the request for use in the router
   req.apiId = apiId;
@@ -118,12 +148,17 @@ app.get('/setup-script/:apiId', (req, res) => {
   const userId = req.userId;
   
   if (!apiGeneratorController.generatedApis.has(apiId)) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
   const api = apiGeneratorController.generatedApis.get(apiId);
   
   // NOTE: User validation check removed to allow any user to access any API setup script
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   // Set header for SQL file download
   res.setHeader('Content-Type', 'application/sql');
@@ -135,6 +170,9 @@ app.get('/setup-script/:apiId', (req, res) => {
 
 // Basic health check route
 app.get('/health', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
   res.json({ 
     status: 'ok', 
     service: 'Backlify-v2',
@@ -145,6 +183,12 @@ app.get('/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
+  
+  // Ensure CORS headers are set even for error responses
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-User-Id, x-user-id, X-USER-ID');
+  
   res.status(500).json({
     error: 'Something went wrong!',
     message: err.message
@@ -157,6 +201,8 @@ app.use('/api/:apiId/docs', (req, res, next) => {
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
@@ -168,6 +214,9 @@ app.use('/api/:apiId/docs', (req, res, next) => {
   console.log('Headers:', req.headers);
   
   // NOTE: User validation check removed to allow any user to access any API documentation
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   // Get the swagger spec from the router
   let swaggerSpec;
@@ -291,10 +340,15 @@ app.get('/api/:apiId/debug-memory', (req, res) => {
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
   // NOTE: User validation check removed to allow any user to access any API debug information
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   // Access the inMemoryDb from your router (might need to adjust based on your implementation)
   const inMemoryData = {};
@@ -319,10 +373,15 @@ app.get('/debug/api/:apiId', (req, res) => {
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
+    // Ensure CORS headers are set even for error responses
+    setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
   }
   
   // NOTE: User validation check removed to allow any user to access any API debug information
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
   
   // Get metadata 
   const metadata = apiPublisher.apiMetadata.get(apiId);
@@ -339,6 +398,9 @@ app.get('/debug/api/:apiId', (req, res) => {
     routerStackSize: router?.stack?.length || 0
   });
 });
+
+// Add schema management routes
+app.use('/', schemaRoutes);
 
 // Load all APIs from registry on startup
 (async () => {

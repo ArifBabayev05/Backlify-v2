@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const config = require('../config/config');
 const schemaGenerator = require('./schemaGenerator');
 const swaggerUi = require('swagger-ui-express');
+const { setCorsHeaders } = require('../middleware/corsMiddleware');
 
 class APIGenerator {
   constructor() {
@@ -26,6 +27,18 @@ class APIGenerator {
 
     // Add in-memory database to the router (ensure it's a new Map instance)
     router.inMemoryDb = new Map();
+
+    // Add a CORS middleware to apply headers for all routes in this router
+    router.use((req, res, next) => {
+      setCorsHeaders(res);
+      next();
+    });
+
+    // Handle OPTIONS requests at the router level
+    router.options('*', (req, res) => {
+      setCorsHeaders(res);
+      res.status(200).end();
+    });
 
     // Store original table schemas to prevent modification
     Object.defineProperty(router, '_tableSchemas', {
