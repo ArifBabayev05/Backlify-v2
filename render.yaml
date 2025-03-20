@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: backlify-v2
+    env: node
+    region: ohio  # You can change this to a region closer to your users
+    plan: free  # Change to a paid plan for production
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000  # Render assigns a port automatically, but we'll set a fallback
+      - key: NODE_ENV
+        value: production
+      - key: MISTRAL_API_KEY
+        sync: false  # This will let you set it in the Render dashboard
+      - key: MISTRAL_MODEL
+        value: mistral-small-latest
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: DB_CONNECTION_STRING
+        sync: false 

@@ -168,15 +168,34 @@ app.get('/setup-script/:apiId', (req, res) => {
   res.send(api.sql);
 });
 
-// Basic health check route
+// Basic health check route with more detailed information
 app.get('/health', (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
+  // Get API count and other status information
+  const apiCount = apiPublisher.apiMetadata ? apiPublisher.apiMetadata.size : 0;
+  const uptime = process.uptime();
+  const memoryUsage = process.memoryUsage();
+  
   res.json({ 
     status: 'ok', 
     service: 'Backlify-v2',
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString(),
+    version: require('../package.json').version,
+    environment: process.env.NODE_ENV || 'development',
+    uptime: {
+      seconds: uptime,
+      formatted: `${Math.floor(uptime / 86400)}d ${Math.floor((uptime % 86400) / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
+    },
+    memory: {
+      rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`
+    },
+    apis: {
+      count: apiCount
+    }
   });
 });
 
@@ -415,7 +434,8 @@ app.use('/', schemaRoutes);
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backlify-v2 server running on port ${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`💻 Hostname: ${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'}`);
 });
