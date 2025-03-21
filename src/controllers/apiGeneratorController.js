@@ -249,34 +249,176 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       const userId = safeMetadata.userId || 'default';
       const tables = safeMetadata.tables || [];
       
-      // Validate tables data
-      if (!tables || !Array.isArray(tables)) {
-        console.error('Invalid tables data for API regeneration:', tables);
-        return null;
-      }
+      // Do any additional processing here
+            
+      // Generate a new router with fresh state
+      const router = apiGenerator.generateEndpoints(tables, userId);
       
-      console.log(`Regenerating API for user: "${userId}"`);
+      // Publish the API with original metadata
+      const apiId = apiPublisher.publishAPI(router, safeMetadata);
       
-      // Ensure each table has the required properties
-      const validTables = tables.filter(table => {
-        // Each table must have a name and columns
-        return table && table.name && table.columns && Array.isArray(table.columns);
-      });
-      
-      if (validTables.length === 0) {
-        console.error('No valid tables found in metadata');
-        return null;
-      }
-      
-      // Create a completely new instance of the API generator
-      // to ensure no shared state
-      const { generateEndpoints } = require('../services/apiGenerator');
-      
-      // Create API endpoints with isolated schemas
-      return generateEndpoints(validTables, userId);
+      return {
+        message: 'API regenerated successfully',
+        apiId,
+        metadata: safeMetadata
+      };
     } catch (error) {
       console.error('Error regenerating API:', error);
-      return null;
+      throw error;
+    }
+  }
+
+  // Generate database schema from prompt - new method for separate endpoint
+  async generateDatabaseSchema(prompt, userId = 'default') {
+    try {
+      console.log(`Generating schema for prompt: "${prompt}" and user: ${userId}`);
+      
+      // Analyze prompt with Mistral AI
+      console.log('Analyzing prompt with Mistral AI...');
+      const analysisResult = await mistralService.analyzeRequest(prompt);
+      
+      // Generate database schema WITHOUT creating tables in Supabase
+      console.log('Generating database schema without creating tables...');
+      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, userId);
+      
+      // Log the tables structure for debugging
+      console.log(`Generated ${processedTables.length} tables for schema`);
+      console.log('Table names:', processedTables.map(t => t.name || t.originalName).join(', '));
+      
+      // Ensure we return the complete table structure with columns
+      if (processedTables.length > 0 && (!processedTables[0].columns || !Array.isArray(processedTables[0].columns))) {
+        console.warn('Tables missing column definitions, attempting to extract from analysis result');
+        
+        // Try to get complete table definitions from the analysis result
+        if (analysisResult.tables && Array.isArray(analysisResult.tables)) {
+          return JSON.parse(JSON.stringify(analysisResult.tables));
+        }
+        
+        // If unable to find column definitions, create a placeholder structure
+        // This should not happen in production, but provides a fallback for testing
+        return processedTables.map(table => {
+          const tableName = table.originalName || table.name;
+          return {
+            name: tableName,
+            columns: [
+              {
+                name: "id",
+                type: "uuid",
+                constraints: "PRIMARY KEY DEFAULT uuid_generate_v4()"
+              },
+              {
+                name: "name",
+                type: "varchar(255)",
+                constraints: "NOT NULL"
+              },
+              {
+                name: "description",
+                type: "text",
+                constraints: ""
+              },
+              {
+                name: "created_at",
+                type: "timestamp with time zone",
+                constraints: "DEFAULT now()"
+              },
+              {
+                name: "updated_at",
+                type: "timestamp with time zone",
+                constraints: "DEFAULT now()"
+              }
+            ],
+            relationships: []
+          };
+        });
+      }
+      
+      // Deep clone the tables to prevent any shared references
+      return JSON.parse(JSON.stringify(processedTables));
+    } catch (error) {
+      console.error('Error generating database schema:', error);
+      throw error;
+    }
+  }
+  
+  // Generate API from provided schema - new method for separate endpoint
+  async generateAPIFromSchema(tables, userId = 'default') {
+    try {
+      console.log(`Generating API from provided schema for user: ${userId}`);
+      
+      // Ensure we have a deep clone of the tables
+      const safeTableSchemas = JSON.parse(JSON.stringify(tables));
+      
+      // First, create the tables in Supabase
+      console.log('Creating tables in Supabase...');
+      
+      // Create a fake analysis result that matches what schemaGenerator.generateSchemas expects
+      const fakeAnalysisResult = {
+        tables: safeTableSchemas.map(table => {
+          // Make sure relationships are properly formatted
+          if (table.relationships && !Array.isArray(table.relationships)) {
+            table.relationships = [table.relationships];
+          } else if (!table.relationships) {
+            table.relationships = [];
+          }
+          
+          return {
+            ...table,
+            // Ensure name is original (without userId prefix)
+            name: table.originalName || table.name
+          };
+        })
+      };
+      
+      // Now create the tables in Supabase
+      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, userId);
+      console.log(`Created ${createdTables.length} tables in Supabase`);
+      
+      // Create API endpoints with isolated schemas
+      console.log('Creating API endpoints...');
+      const router = apiGenerator.generateEndpoints(safeTableSchemas, userId);
+      
+      // Create metadata
+      const safeMetadata = {
+        userId,
+        tables: safeTableSchemas,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Publish API with safe metadata
+      console.log('Publishing API...');
+      const apiId = apiPublisher.publishAPI(router, safeMetadata);
+      
+      // Store in memory for quick access - use a deep clone
+      this.generatedApis.set(apiId, JSON.parse(JSON.stringify({
+        userId,
+        tables: safeTableSchemas,
+        apiId,
+        sql: this.generateSQL(safeTableSchemas, userId)
+      })));
+      
+      // Add to user API mapping
+      if (!this.userApiMapping.has(userId)) {
+        this.userApiMapping.set(userId, new Set());
+      }
+      this.userApiMapping.get(userId).add(apiId);
+      
+      // Return information about the created API
+      return {
+        apiId,
+        endpoints: safeTableSchemas.map(t => ({
+          table: t.originalName || t.name,
+          routes: [
+            { method: 'GET', path: `/${t.name}` },
+            { method: 'GET', path: `/${t.name}/:id` },
+            { method: 'POST', path: `/${t.name}` },
+            { method: 'PUT', path: `/${t.name}/:id` },
+            { method: 'DELETE', path: `/${t.name}/:id` }
+          ]
+        }))
+      };
+    } catch (error) {
+      console.error('Error generating API from schema:', error);
+      throw error;
     }
   }
 

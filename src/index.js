@@ -48,12 +48,196 @@ app.use((req, res, next) => {
   console.log('Request headers:', req.headers);
   console.log('Using userId:', userId);
   
+  // Set userId on the request object
   req.userId = userId;
+  
   next();
 });
 
 // Create controller instance
 const apiGeneratorController = require('./controllers/apiGeneratorController');
+
+// Registration endpoint
+app.post('/auth/register', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  const { email, password, phone, username } = req.body;
+  
+  // Basic validation
+  if ((!email && !phone) || !password) {
+    return res.status(400).json({ 
+      error: 'Missing required fields',
+      details: 'Please provide either email or phone number, and a password'
+    });
+  }
+  
+  // In a real implementation, you would check if the user already exists
+  // and save the new user to a database
+  
+  // For now, generate a userId from email, phone or username
+  const userId = username || (email ? email.split('@')[0] : `user-${phone}`);
+  
+  // Return the created user info
+  res.status(201).json({
+    success: true,
+    message: 'User registered successfully',
+    userId,
+    email,
+    phone
+  });
+});
+
+// 1. Authentication endpoint
+app.post('/auth/login', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  const { email, password, phone, username } = req.body;
+  
+  // Basic validation
+  if ((!email && !phone && !username) || !password) {
+    return res.status(400).json({ 
+      error: 'Authentication failed', 
+      details: 'Please provide either email, phone number, or username, and a password'
+    });
+  }
+  
+  // For now, this is a simple mock authentication
+  // In a real implementation, you would validate credentials against a database
+  
+  // Generate userId from the provided credentials
+  const userId = username || (email ? email.split('@')[0] : `user-${phone}`);
+  
+  // Return the userId without token
+  res.json({
+    success: true,
+    userId,
+    message: 'Authentication successful'
+  });
+});
+
+// 2. Schema generator API
+app.post('/generate-schema', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  const { prompt, userId } = req.body;
+  
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' });
+  }
+  
+  // Use userId from body or from the authenticated user
+  const userIdToUse = userId || req.userId;
+  
+  // Call the AI service to generate schema
+  try {
+    apiGeneratorController.generateDatabaseSchema(prompt, userIdToUse)
+      .then(tables => {
+        // Validate that we have proper table structures
+        if (!tables || !Array.isArray(tables) || tables.length === 0) {
+          return res.status(500).json({ 
+            error: 'Failed to generate schema',
+            details: 'No valid tables were generated'
+          });
+        }
+        
+        // Verify each table has columns
+        const validTables = tables.filter(table => 
+          table && table.name && table.columns && Array.isArray(table.columns) && table.columns.length > 0
+        );
+        
+        if (validTables.length === 0) {
+          return res.status(500).json({ 
+            error: 'Failed to generate schema',
+            details: 'Generated tables have no valid column definitions'
+          });
+        }
+        
+        // Log the table structure for debugging
+        console.log(`Returning ${validTables.length} valid tables with column definitions`);
+        validTables.forEach(table => {
+          console.log(`- Table "${table.name}" with ${table.columns.length} columns`);
+        });
+        
+        // Send back exactly the structure needed for create-api-from-schema
+        res.json({
+          success: true,
+          userId: userIdToUse,
+          tables: validTables, // Return only the validated tables with proper structure
+        });
+      })
+      .catch(error => {
+        console.error('Error generating schema:', error);
+        res.status(500).json({ error: error.message });
+      });
+  } catch (error) {
+    console.error('Error generating schema:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. API generator from schema
+app.post('/create-api-from-schema', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  let tables;
+  let userId;
+  
+  // Handle both formats:
+  // 1. Direct { tables: [...], userId: "..." }
+  // 2. Output from generate-schema { success: true, userId: "...", tables: [...] }
+  if (req.body.tables) {
+    tables = req.body.tables;
+    userId = req.body.userId || req.userId;
+  } else if (req.body.success && req.body.tables) {
+    // This is likely the full response from generate-schema
+    tables = req.body.tables;
+    userId = req.body.userId || req.userId;
+  } else {
+    return res.status(400).json({ 
+      error: 'Valid tables structure is required',
+      details: 'Please provide a tables array in your request'
+    });
+  }
+  
+  if (!tables || !Array.isArray(tables) || tables.length === 0) {
+    return res.status(400).json({ 
+      error: 'Valid tables structure is required',
+      details: 'The tables array must be non-empty'
+    });
+  }
+  
+  const userIdToUse = userId || req.userId;
+  
+  console.log(`Creating API from schema for user: ${userIdToUse}`);
+  console.log(`Number of tables in schema: ${tables.length}`);
+  
+  // Generate API from the provided schema
+  try {
+    // This would call the API generator with the provided schema
+    apiGeneratorController.generateAPIFromSchema(tables, userIdToUse)
+      .then(result => {
+        res.json({
+          success: true,
+          userId: userIdToUse,
+          apiId: result.apiId,
+          message: 'API successfully generated and tables created in Supabase',
+          endpoints: result.endpoints,
+          swagger_url: `/api/${result.apiId}/docs`
+        });
+      })
+      .catch(error => {
+        console.error('Error generating API from schema:', error);
+        res.status(500).json({ error: error.message });
+      });
+  } catch (error) {
+    console.error('Error generating API from schema:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Generate API endpoint - pass userId from the request
 app.post('/generate-api', (req, res) => {

@@ -436,6 +436,38 @@ $$;
   getAllSchemas() {
     return Array.from(this.schemas.values());
   }
+
+  // New method: Generate schemas without creating tables in Supabase
+  async generateSchemasWithoutCreating(analysisResult, userId = 'default') {
+    try {
+      // Make a deep copy of the tables to avoid modifying the original
+      const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
+      
+      console.log("Original tables structure:", JSON.stringify(tablesData, null, 2));
+      
+      // Process tables but don't create them in Supabase
+      const processedTables = tablesData.map(table => {
+        // Preserve original table name
+        const originalName = table.name;
+        // Add userId prefix to table name (for when it will be created later)
+        const prefixedTableName = `${userId}_${table.name}`;
+        
+        // Return the complete table structure with both original and prefixed names
+        return {
+          ...table,
+          originalName: originalName,
+          name: originalName,  // Keep the original name for the schema
+          prefixedName: prefixedTableName  // Store the prefixed name for later use
+        };
+      });
+      
+      console.log(`Processed ${processedTables.length} tables without creating them in Supabase`);
+      return processedTables;
+    } catch (error) {
+      console.error("Schema processing error:", error);
+      throw new Error(`Schema processing failed: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new SchemaGenerator(); 
