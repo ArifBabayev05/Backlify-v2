@@ -124,10 +124,10 @@ class APIGenerator {
       const tableName = schema.originalName || schema.name;
       const prefixedTableName = schema.prefixedName || `${userId}_${tableName}`;
 
-      // GET all items with pagination and filtering - filter by userId
+      // GET all items with pagination and filtering
       router.get(`/${tableName}`, async (req, res) => {
         try {
-          const { page = 1, limit = 10, sort, order = 'asc', include_all_users, ...filters } = req.query;
+          const { page = 1, limit = 10, sort, order = 'asc', ...filters } = req.query;
           const offset = (parseInt(page) - 1) * parseInt(limit);
           
           // Build the query using a new Supabase client instance to avoid shared state
@@ -136,72 +136,57 @@ class APIGenerator {
           let query = supabase
             .from(prefixedTableName)
             .select('*', { count: 'exact' });
-            
-            // Only filter by the userId that created this API if include_all_users is not "true"
-            if (include_all_users !== "true") {
-              query = query.eq('user_id', router.userId);
-            } else {
-              console.log(`Getting all records for ${prefixedTableName} regardless of user_id`);
-            }
-            
-            // Apply additional filters
-            Object.entries(filters).forEach(([key, value]) => {
-              query = query.eq(key, value);
-            });
-            
-            // Apply sorting if specified
-            if (sort) {
-              const orderDirection = order.toLowerCase() === 'desc' ? false : true;
-              query = query.order(sort, { ascending: orderDirection });
-            }
-            
-            // Apply pagination
-            query = query.range(offset, offset + parseInt(limit) - 1);
-            
-            // Execute the query
-            const { data, error, count } = await query;
-            
-            if (error) {
-              console.error(`Error fetching ${prefixedTableName}:`, error);
-              return res.status(500).json({ 
-                error: `Database error: ${error.message}`,
-                hint: 'Ensure the table exists and has the correct structure'
-              });
-            }
-            
-            res.json({
-              data: data || [],
-              pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: count || 0
-              }
-            });
-          } catch (error) {
-            console.error(`Error in GET ${tableName}:`, error);
-            res.status(500).json({ error: error.message });
+          
+          // Apply all filters from query params
+          Object.entries(filters).forEach(([key, value]) => {
+            query = query.eq(key, value);
+          });
+          
+          // Apply sorting if specified
+          if (sort) {
+            const orderDirection = order.toLowerCase() === 'desc' ? false : true;
+            query = query.order(sort, { ascending: orderDirection });
           }
-        });
+          
+          // Apply pagination
+          query = query.range(offset, offset + parseInt(limit) - 1);
+          
+          // Execute the query
+          const { data, error, count } = await query;
+          
+          if (error) {
+            console.error(`Error fetching ${prefixedTableName}:`, error);
+            return res.status(500).json({ 
+              error: `Database error: ${error.message}`,
+              hint: 'Ensure the table exists and has the correct structure'
+            });
+          }
+          
+          res.json({
+            data: data || [],
+            pagination: {
+              page: parseInt(page),
+              limit: parseInt(limit),
+              total: count || 0
+            }
+          });
+        } catch (error) {
+          console.error(`Error in GET ${tableName}:`, error);
+          res.status(500).json({ error: error.message });
+        }
+      });
 
-      // GET item by id - ensure it belongs to current userId
+      // GET item by id
       router.get(`/${tableName}/:id`, async (req, res) => {
         try {
-          const { include_all_users } = req.query;
-          
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
-          let query = supabase
+          const { data, error } = await supabase
             .from(prefixedTableName)
             .select('*')
-            .eq('id', req.params.id);
-          
-          // Only filter by the API creator's userId if include_all_users is not "true"
-          if (include_all_users !== "true") {
-            query = query.eq('user_id', router.userId); // Ensure record belongs to API creator
-          }
-          
-          const { data, error } = await query.single();
+            .eq('id', req.params.id)
+            .single();
           
           if (error) {
             if (error.code === 'PGRST116') {
@@ -219,7 +204,7 @@ class APIGenerator {
         }
       });
 
-      // POST new item - automatically include userId
+      // POST new item
       router.post(`/${tableName}`, async (req, res) => {
         try {
           // Clone the request body to avoid modifying the original
@@ -233,34 +218,9 @@ class APIGenerator {
             delete requestData.id;
           }
           
-          // Check if a user_id was provided in the request
-          const providedUserId = requestData.user_id;
-          
-          // Use a new Supabase client instance to avoid shared state
-          const supabase = createClient(config.supabase.url, config.supabase.key);
-          
-          // If a valid user_id is provided, check if it exists in the users table for this API
-          if (providedUserId && providedUserId !== router.userId) {
-            // Construct users table name with the API userId prefix
-            const usersTableName = `${userId}_users`;
-            
-            // Check if the provided user_id exists in the users table
-            const { data: userData, error: userError } = await supabase
-              .from(usersTableName)
-              .select('id')
-              .eq('id', providedUserId)
-              .single();
-            
-            if (userError || !userData) {
-              console.log(`User ID ${providedUserId} not found in ${usersTableName} table. Using API userId ${router.userId} instead.`);
-              // User not found, default to API userId
-              requestData.user_id = router.userId;
-            } else {
-              console.log(`Using provided user_id ${providedUserId} for new record in ${prefixedTableName}`);
-              // Keep the provided user_id as it exists in the users table
-            }
-          } else {
-            // No valid user_id provided, use the API's userId
+          // If user_id is missing, set it to the API userId (for backward compatibility)
+          if (requestData.user_id === undefined || requestData.user_id === null || requestData.user_id === "") {
+            console.log(`No user_id provided, setting to API userId: ${router.userId}`);
             requestData.user_id = router.userId;
           }
           
@@ -276,11 +236,11 @@ class APIGenerator {
           Object.keys(requestData).forEach(key => {
             // Only clean placeholder values, keep valid values
             if (requestData[key] === "string" || 
-                (key.endsWith('_id') && key !== 'user_id' && 
+                (key.endsWith('_id') && 
                  (requestData[key] === "00000000-0000-0000-0000-000000000000" || 
                   requestData[key] === ""))) {
               
-              if (key.endsWith('_id') && key !== 'user_id') {
+              if (key.endsWith('_id')) {
                 // For foreign keys, use null instead of empty values
                 requestData[key] = null;
               } else if (key !== 'created_at' && key !== 'updated_at' && key !== 'id') {
@@ -291,6 +251,9 @@ class APIGenerator {
           });
           
           console.log(`Adding record to ${prefixedTableName}:`, requestData);
+          
+          // Use a new Supabase client instance to avoid shared state
+          const supabase = createClient(config.supabase.url, config.supabase.key);
           
           // Make sure we're inserting into the exact prefixed table
           const { data, error } = await supabase
@@ -323,55 +286,42 @@ class APIGenerator {
         }
       });
 
-      // PUT/UPDATE item - ensure it belongs to current userId
+      // PUT/UPDATE item
       router.put(`/${tableName}/:id`, async (req, res) => {
         try {
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
-          // First check if record belongs to this API's userId
+          // First check if record exists
           const { data: checkData, error: checkError } = await supabase
             .from(prefixedTableName)
-            .select('id')
+            .select('id, user_id')
             .eq('id', req.params.id)
-            .eq('user_id', router.userId)
             .single();
           
           if (checkError || !checkData) {
-            return res.status(404).json({ error: 'Record not found or not authorized' });
+            return res.status(404).json({ error: 'Record not found' });
           }
           
           // Clone the request body to avoid modifying it
           const updateData = { ...req.body };
           
-          // Check if a user_id is being changed in the update
-          if (updateData.user_id && updateData.user_id !== router.userId) {
-            // Construct users table name with the API userId prefix
-            const usersTableName = `${userId}_users`;
-            
-            // Check if the provided user_id exists in the users table
-            const { data: userData, error: userError } = await supabase
-              .from(usersTableName)
-              .select('id')
-              .eq('id', updateData.user_id)
-              .single();
-            
-            if (userError || !userData) {
-              console.log(`User ID ${updateData.user_id} not found in ${usersTableName} table. Using API userId ${router.userId} instead.`);
-              // User not found, default to API userId
-              updateData.user_id = router.userId;
+          // Don't allow removing the user_id 
+          if (updateData.user_id === undefined || updateData.user_id === null || updateData.user_id === "") {
+            // Use the existing user_id from the record
+            if (checkData.user_id) {
+              updateData.user_id = checkData.user_id;
             } else {
-              console.log(`Using provided user_id ${updateData.user_id} for updating record in ${prefixedTableName}`);
-              // Keep the provided user_id as it exists in the users table
+              // If somehow the existing record has no user_id, use the API userId
+              updateData.user_id = router.userId;
             }
           }
           
-          // Record belongs to user, proceed with update
+          // Record exists, proceed with update
           const { data, error } = await supabase
             .from(prefixedTableName)
             .update(updateData)
             .eq('id', req.params.id)
-            .eq('user_id', router.userId) // Ensure we only update user's own record
             .select();
           
           if (error) {
@@ -386,30 +336,28 @@ class APIGenerator {
         }
       });
 
-      // DELETE item - ensure it belongs to current userId
+      // DELETE item
       router.delete(`/${tableName}/:id`, async (req, res) => {
         try {
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
-          // First check if record belongs to this API's userId
+          // First check if record exists
           const { data: checkData, error: checkError } = await supabase
             .from(prefixedTableName)
             .select('id')
             .eq('id', req.params.id)
-            .eq('user_id', router.userId)
             .single();
           
           if (checkError || !checkData) {
-            return res.status(404).json({ error: 'Record not found or not authorized' });
+            return res.status(404).json({ error: 'Record not found' });
           }
           
-          // Delete from Supabase with user_id check
+          // Delete from Supabase
           const { error } = await supabase
             .from(prefixedTableName)
             .delete()
-            .eq('id', req.params.id)
-            .eq('user_id', router.userId); // Ensure we only delete user's own record
+            .eq('id', req.params.id);
           
           if (error) {
             console.error(`Error deleting record from ${prefixedTableName}:`, error);
@@ -540,12 +488,6 @@ function _generateSwaggerSpec(tableSchemas, userId) {
             in: 'query',
             description: 'Sort order (asc or desc)',
             schema: { type: 'string', enum: ['asc', 'desc'], default: 'asc' }
-          },
-          {
-            name: 'include_all_users',
-            in: 'query',
-            description: 'When set to "true", returns records from all users, not just the API creator',
-            schema: { type: 'string', enum: ['true', 'false'] }
           }
         ],
         responses: {
@@ -581,12 +523,6 @@ function _generateSwaggerSpec(tableSchemas, userId) {
             in: 'path',
             required: true,
             schema: { type: 'string' }
-          },
-          {
-            name: 'include_all_users',
-            in: 'query',
-            description: 'When set to "true", returns the record regardless of owner',
-            schema: { type: 'string', enum: ['true', 'false'] }
           }
         ],
         responses: {
