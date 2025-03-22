@@ -178,6 +178,74 @@ app.post('/generate-schema', (req, res) => {
   }
 });
 
+// New endpoint for modifying an existing schema
+app.post('/modify-schema', (req, res) => {
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  const { prompt, tables, userId } = req.body;
+  
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' });
+  }
+  
+  if (!tables || !Array.isArray(tables) || tables.length === 0) {
+    return res.status(400).json({ 
+      error: 'Valid tables structure is required',
+      details: 'Please provide the existing tables array to modify'
+    });
+  }
+  
+  // Use userId from body or from the authenticated user
+  const userIdToUse = userId || req.userId;
+  
+  // Call the AI service to modify the existing schema
+  try {
+    apiGeneratorController.modifyDatabaseSchema(prompt, tables, userIdToUse)
+      .then(modifiedTables => {
+        // Validate that we have proper table structures
+        if (!modifiedTables || !Array.isArray(modifiedTables) || modifiedTables.length === 0) {
+          return res.status(500).json({ 
+            error: 'Failed to modify schema',
+            details: 'No valid tables were generated'
+          });
+        }
+        
+        // Verify each table has columns
+        const validTables = modifiedTables.filter(table => 
+          table && table.name && table.columns && Array.isArray(table.columns) && table.columns.length > 0
+        );
+        
+        if (validTables.length === 0) {
+          return res.status(500).json({ 
+            error: 'Failed to modify schema',
+            details: 'Modified tables have no valid column definitions'
+          });
+        }
+        
+        // Log the table structure for debugging
+        console.log(`Returning ${validTables.length} valid tables with column definitions after modification`);
+        validTables.forEach(table => {
+          console.log(`- Table "${table.name}" with ${table.columns.length} columns`);
+        });
+        
+        // Send back the modified schema
+        res.json({
+          success: true,
+          userId: userIdToUse,
+          tables: validTables, // Return only the validated tables with proper structure
+        });
+      })
+      .catch(error => {
+        console.error('Error modifying schema:', error);
+        res.status(500).json({ error: error.message });
+      });
+  } catch (error) {
+    console.error('Error modifying schema:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 3. API generator from schema
 app.post('/create-api-from-schema', (req, res) => {
   // Ensure CORS headers are set

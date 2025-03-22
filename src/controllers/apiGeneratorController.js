@@ -340,6 +340,73 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
     }
   }
   
+  // Modify an existing database schema based on a prompt
+  async modifyDatabaseSchema(prompt, existingTables, userId = 'default') {
+    try {
+      console.log(`Modifying schema for prompt: "${prompt}" and user: ${userId}`);
+      console.log(`Existing tables: ${existingTables.length}`);
+      
+      // Create a modification context to inform the AI about the existing schema
+      const tableDescriptions = existingTables.map(table => {
+        const columnDescriptions = table.columns.map(col => 
+          `${col.name} (${col.type}${col.constraints ? ' ' + col.constraints : ''})`
+        ).join(', ');
+        
+        return `- Table "${table.name}" with columns: ${columnDescriptions}`;
+      }).join('\n');
+      
+      // Create an enhanced prompt including the existing schema
+      const enhancedPrompt = `
+EXISTING SCHEMA:
+${tableDescriptions}
+
+MODIFICATION REQUEST:
+${prompt}
+
+Please modify the existing schema based on the modification request. Return the complete updated schema with all tables.
+`;
+      
+      // Analyze enhanced prompt with Mistral AI
+      console.log('Analyzing modification prompt with Mistral AI...');
+      const analysisResult = await mistralService.analyzeSchemaModification(enhancedPrompt, existingTables);
+      
+      // Extract the modified schema
+      console.log('Processing modified schema...');
+      
+      // If the AI service returns complete tables, use them directly
+      if (analysisResult.tables && Array.isArray(analysisResult.tables) && analysisResult.tables.length > 0) {
+        // Ensure each table has the required properties
+        const processedTables = analysisResult.tables.map(table => {
+          return {
+            name: table.name,
+            originalName: table.originalName || table.name,
+            columns: table.columns || [],
+            relationships: table.relationships || []
+          };
+        });
+        
+        console.log(`Modified schema contains ${processedTables.length} tables`);
+        return JSON.parse(JSON.stringify(processedTables));
+      }
+      
+      // Fallback: If the AI didn't return a complete schema, use schemaGenerator
+      console.log('Generating modified schema using schema generator...');
+      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, userId);
+      
+      // Check if we got valid tables back
+      if (!processedTables || !Array.isArray(processedTables) || processedTables.length === 0) {
+        console.warn('Failed to generate modified schema, returning original schema');
+        return JSON.parse(JSON.stringify(existingTables));
+      }
+      
+      // Deep clone the tables to prevent any shared references
+      return JSON.parse(JSON.stringify(processedTables));
+    } catch (error) {
+      console.error('Error modifying database schema:', error);
+      throw error;
+    }
+  }
+  
   // Generate API from provided schema - new method for separate endpoint
   async generateAPIFromSchema(tables, userId = 'default') {
     try {

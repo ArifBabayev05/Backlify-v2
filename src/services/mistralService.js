@@ -169,6 +169,84 @@ IMPORTANT NOTES:
       throw new Error(`Failed to analyze request: ${error.message}`);
     }
   }
+
+  async analyzeSchemaModification(prompt, existingTables) {
+    try {
+      const systemPrompt = `You are a database schema expert that modifies existing database schemas based on user requests.
+
+Your task is to analyze an existing schema and modify it according to the user's instructions.
+The user will provide the existing schema and their modification request.
+
+Output should be in JSON format with the following structure: 
+{
+  "tables": [
+    {
+      "name": "table_name",
+      "columns": [
+        {
+          "name": "column_name",
+          "type": "data_type",
+          "constraints": ["constraint1", "constraint2"]
+        }
+      ],
+      "relationships": [
+        {
+          "targetTable": "target_table",
+          "type": "one-to-many",
+          "sourceColumn": "source_column",
+          "targetColumn": "target_column"
+        }
+      ]
+    }
+  ]
+}
+
+IMPORTANT NOTES:
+1. Return ONLY the raw JSON without any markdown formatting.
+2. Always include timestamp columns (created_at, updated_at) for each table.
+3. Make sure each table has an "id" column with "primary key" constraint.
+4. Use PostgreSQL data types (uuid, varchar, text, integer, timestamp, etc.).
+5. Include appropriate indexes and foreign key constraints.
+6. Keep the existing schema structure unless explicitly requested to modify it.
+7. Maintain existing relationships unless they conflict with new changes.`;
+      
+      // Provide the existing schema as context
+      const existingSchemaJson = JSON.stringify(existingTables, null, 2);
+      const enhancedPrompt = `${prompt}\n\nExisting schema for reference (in JSON format):\n${existingSchemaJson}`;
+      
+      const jsonResponse = await this.generateCompletion(systemPrompt, enhancedPrompt);
+      console.log('Raw Mistral schema modification response:', jsonResponse);
+      
+      // Clean the response and parse JSON
+      const cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
+      
+      try {
+        const parsedResponse = JSON.parse(cleanedResponse);
+        return this._normalizeResponse(parsedResponse);
+      } catch (parseError) {
+        console.error('Failed to parse Mistral response as JSON:', parseError);
+        
+        // Try to extract JSON from the text
+        const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const extractedJson = JSON.parse(jsonMatch[0]);
+            return this._normalizeResponse(extractedJson);
+          } catch (extractError) {
+            console.error('Failed to extract JSON from response:', extractError);
+            // Return the original tables as fallback
+            return { tables: existingTables };
+          }
+        }
+        // Return the original tables as fallback
+        return { tables: existingTables };
+      }
+    } catch (error) {
+      console.error('Mistral schema modification error:', error);
+      // Return the original tables as fallback
+      return { tables: existingTables };
+    }
+  }
 }
 
 module.exports = new MistralService(); 
