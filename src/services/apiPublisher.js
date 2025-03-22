@@ -4,6 +4,60 @@ class APIPublisher {
   constructor() {
     this.apiInstances = new Map();
     this.apiMetadata = new Map();
+    
+    // Initialize the api_registry table
+    // We can't use await in the constructor, so use a promise and handle errors
+    this._initializeRegistry().catch(error => {
+      console.error('Failed to initialize API registry:', error);
+    });
+  }
+
+  // Add method to ensure api_registry table exists
+  async _initializeRegistry() {
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const config = require('../config/config');
+      
+      // Check if Supabase config is present
+      if (!config.supabase || !config.supabase.url || !config.supabase.key) {
+        console.error('Supabase configuration is missing or incomplete. Check your .env file.');
+        return;
+      }
+      
+      console.log('Initializing API registry table...');
+      
+      const supabase = createClient(config.supabase.url, config.supabase.key);
+      
+      // First check if the table exists by trying to query it
+      const { error: queryError } = await supabase
+        .from('api_registry')
+        .select('api_id')
+        .limit(1);
+      
+      if (queryError && queryError.code === '42P01') {
+        console.log('API registry table does not exist. Creating it...');
+        
+        // Try to create the table through either execute_sql or direct SQL in Supabase dashboard
+        console.error('Table "api_registry" does not exist. Please create it manually with the following SQL:');
+        console.error(`
+          CREATE TABLE api_registry (
+            api_id UUID PRIMARY KEY,
+            metadata JSONB NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+          );
+        `);
+        
+        // Note: We won't attempt to create it automatically as it requires admin privileges 
+        // that the service role API key might not have.
+      } else if (queryError) {
+        console.error('Error checking if api_registry table exists:', queryError);
+      } else {
+        console.log('API registry table exists.');
+      }
+    } catch (error) {
+      console.error('Error initializing API registry:', error);
+    }
   }
 
   publishAPI(router, metadata = {}) {
@@ -79,6 +133,13 @@ class APIPublisher {
       // Create Supabase client for persistence
       const { createClient } = require('@supabase/supabase-js');
       const config = require('../config/config');
+      
+      // Check if Supabase config is present
+      if (!config.supabase || !config.supabase.url || !config.supabase.key) {
+        console.error('Supabase configuration is missing or incomplete. Check your .env file.');
+        return;
+      }
+      
       const supabase = createClient(config.supabase.url, config.supabase.key);
       
       // The metadata should already have userId included, but ensure it's there
@@ -92,21 +153,48 @@ class APIPublisher {
       
       console.log(`Persisting API ${apiId} for user ${dataToStore.userId}`);
       
+      // Prepare the record object
+      const record = { 
+        api_id: apiId,
+        metadata: JSON.stringify(dataToStore),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      
       // Store in a dedicated table
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('api_registry')
-        .upsert({ 
-          api_id: apiId,
-          metadata: JSON.stringify(dataToStore),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        .upsert(record)
+        .select();
         
       if (error) {
         console.error('Error persisting API metadata:', error);
+        // Log more specific error details
+        if (error.code === '42P01') {
+          console.error('Table "api_registry" does not exist. Create it with the following SQL:');
+          console.error(`
+            CREATE TABLE api_registry (
+              api_id UUID PRIMARY KEY,
+              metadata JSONB NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+              updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+            );
+          `);
+        } else if (error.code === '42703') {
+          console.error('Column error. Check that the table has the correct schema.');
+        } else if (error.code === '23505') {
+          console.error('Duplicate key error. The API ID already exists.');
+        } else {
+          console.error('Database error details:', error.details || 'No additional details');
+        }
+      } else {
+        console.log(`Successfully persisted API ${apiId} to database.`);
       }
     } catch (error) {
       console.error('Failed to persist API metadata:', error);
+      // Log out error stack trace for debugging
+      console.error(error.stack);
     }
   }
   
@@ -115,18 +203,37 @@ class APIPublisher {
     try {
       const { createClient } = require('@supabase/supabase-js');
       const config = require('../config/config');
+      
+      // Check if Supabase config is present
+      if (!config.supabase || !config.supabase.url || !config.supabase.key) {
+        console.error('Supabase configuration is missing or incomplete. Check your .env file.');
+        return;
+      }
+      
       const supabase = createClient(config.supabase.url, config.supabase.key);
       
-      const { error } = await supabase
+      console.log(`Removing API ${apiId} from the database`);
+      
+      const { data, error } = await supabase
         .from('api_registry')
         .delete()
-        .eq('api_id', apiId);
+        .eq('api_id', apiId)
+        .select();
         
       if (error) {
         console.error('Error removing API metadata:', error);
+        // Log more specific error details
+        if (error.code === '42P01') {
+          console.error('Table "api_registry" does not exist.');
+        } else {
+          console.error('Database error details:', error.details || 'No additional details');
+        }
+      } else {
+        console.log(`Successfully removed API ${apiId} from database.`);
       }
     } catch (error) {
       console.error('Failed to remove API metadata:', error);
+      console.error(error.stack);
     }
   }
   

@@ -45,7 +45,6 @@ app.use((req, res, next) => {
                 'default';
   
   // Log all headers to debug the issue
-  console.log('Request headers:', req.headers);
   console.log('Using userId:', userId);
   
   // Set userId on the request object
