@@ -67,28 +67,28 @@ class APIPublisher {
     const safeMetadata = JSON.parse(JSON.stringify({
       ...metadata,
       apiId,
-      userId: metadata.userId || 'default',
+      XAuthUserId: metadata.XAuthUserId || 'default',
       createdAt: new Date().toISOString(),
       lastAccessed: new Date().toISOString()
     }));
     
     // Make sure the router has the user ID assigned to it (in case it wasn't set already)
     // Use read-only property if not already defined
-    if (!router.hasOwnProperty('userId')) {
-      Object.defineProperty(router, 'userId', {
-        value: safeMetadata.userId,
+    if (!router.hasOwnProperty('XAuthUserId')) {
+      Object.defineProperty(router, 'XAuthUserId', {
+        value: safeMetadata.XAuthUserId,
         writable: false,
         enumerable: true
       });
     }
     
     // Log which API is being published and for which user
-    console.log(`Publishing API ${apiId} for user ${router.userId}`);
+    console.log(`Publishing API ${apiId} for user ${router.XAuthUserId}`);
     
     // Store router in the map
     this.apiInstances.set(apiId, router);
     
-    // Store metadata about this API with userId explicitly included
+    // Store metadata about this API with XAuthUserId explicitly included
     this.apiMetadata.set(apiId, safeMetadata);
     
     // Persist API metadata to database
@@ -104,7 +104,7 @@ class APIPublisher {
       metadata.lastAccessed = new Date().toISOString();
       
       // Log which API is being accessed
-      console.log(`Accessing API ${apiId} for user ${metadata.userId || 'default'}`);
+      console.log(`Accessing API ${apiId} for user ${metadata.XAuthUserId || 'default'}`);
     }
     
     // If router exists, return it
@@ -114,7 +114,7 @@ class APIPublisher {
       
       // Ensure the user mapping is updated
       const metadata = this.apiMetadata.get(apiId);
-      if (metadata && metadata.userId) {
+      if (metadata && metadata.XAuthUserId) {
         try {
           // Get the controller to update its mappings
           const apiGeneratorController = require('../controllers/apiGeneratorController');
@@ -133,10 +133,10 @@ class APIPublisher {
           }
           
           // Ensure API is in userApiMapping
-          if (!apiGeneratorController.userApiMapping.has(metadata.userId)) {
-            apiGeneratorController.userApiMapping.set(metadata.userId, new Set());
+          if (!apiGeneratorController.userApiMapping.has(metadata.XAuthUserId)) {
+            apiGeneratorController.userApiMapping.set(metadata.XAuthUserId, new Set());
           }
-          apiGeneratorController.userApiMapping.get(metadata.userId).add(apiId);
+          apiGeneratorController.userApiMapping.get(metadata.XAuthUserId).add(apiId);
         } catch (error) {
           console.error('Error updating API mappings:', error);
         }
@@ -173,16 +173,16 @@ class APIPublisher {
       
       const supabase = createClient(config.supabase.url, config.supabase.key);
       
-      // The metadata should already have userId included, but ensure it's there
+      // The metadata should already have XAuthUserId included, but ensure it's there
       const dataToStore = typeof metadata === 'string' 
         ? JSON.parse(metadata) 
         : metadata;
       
-      if (!dataToStore.userId) {
-        dataToStore.userId = 'default';
+      if (!dataToStore.XAuthUserId) {
+        dataToStore.XAuthUserId = 'default';
       }
       
-      console.log(`Persisting API ${apiId} for user ${dataToStore.userId}`);
+      console.log(`Persisting API ${apiId} for user ${dataToStore.XAuthUserId}`);
       
       // Prepare the record object
       const record = { 
@@ -298,9 +298,9 @@ class APIPublisher {
         return null;
       }
       
-      // Get userId from metadata or use default
-      const userId = metadata.userId || 'default';
-      console.log(`Restoring API ${apiId} for user ${userId}`);
+      // Get XAuthUserId from metadata or use default
+      const XAuthUserId = metadata.XAuthUserId || 'default';
+      console.log(`Restoring API ${apiId} for user ${XAuthUserId}`);
       
       // Only proceed if we have tables information
       if (!metadata || !metadata.tables || !Array.isArray(metadata.tables)) {
@@ -316,16 +316,16 @@ class APIPublisher {
       
       // Create a new Express router for this API - with the isolated schemas
       console.log(`Creating new router for API ${apiId}`);
-      const regeneratedRouter = generateEndpoints(safeTableSchemas, userId);
+      const regeneratedRouter = generateEndpoints(safeTableSchemas, XAuthUserId);
       
       // Store the regenerated API router
       this.apiInstances.set(apiId, regeneratedRouter);
       
-      // Update metadata to ensure userId is stored correctly - use a safe clone
+      // Update metadata to ensure XAuthUserId is stored correctly - use a safe clone
       const safeMetadata = JSON.parse(JSON.stringify({
         ...metadata,
         apiId,
-        userId: userId,
+        XAuthUserId: XAuthUserId,
         restored: true,
         lastAccessed: new Date().toISOString()
       }));
@@ -353,10 +353,10 @@ class APIPublisher {
           apiGeneratorController.generatedApis.set(apiId, apiObject);
           
           // Update the userApiMapping
-          if (!apiGeneratorController.userApiMapping.has(userId)) {
-            apiGeneratorController.userApiMapping.set(userId, new Set());
+          if (!apiGeneratorController.userApiMapping.has(XAuthUserId)) {
+            apiGeneratorController.userApiMapping.set(XAuthUserId, new Set());
           }
-          apiGeneratorController.userApiMapping.get(userId).add(apiId);
+          apiGeneratorController.userApiMapping.get(XAuthUserId).add(apiId);
           
           console.log(`Updated apiGeneratorController maps for API ${apiId}`);
         } catch (updateError) {
@@ -407,9 +407,9 @@ class APIPublisher {
             continue;
           }
           
-          // Log API being restored with its userId
-          const userId = metadata.userId || 'default';
-          console.log(`Restoring API ${apiId} for user ${userId}`);
+          // Log API being restored with its XAuthUserId
+          const XAuthUserId = metadata.XAuthUserId || 'default';
+          console.log(`Restoring API ${apiId} for user ${XAuthUserId}`);
           
           // Clone the metadata to prevent shared references
           const safeMetadata = JSON.parse(JSON.stringify(metadata));

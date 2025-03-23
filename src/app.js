@@ -15,7 +15,7 @@ app.use('/api/:apiId/docs', (req, res, next) => {
   // Get the swagger spec for this API
   const swaggerSpec = apiGenerator._generateSwaggerSpec(
     apiGeneratorController.generatedApis.get(apiId).tables,
-    apiGeneratorController.generatedApis.get(apiId).userId
+    apiGeneratorController.generatedApis.get(apiId).XAuthUserId
   );
   
   // Serve Swagger UI with this spec

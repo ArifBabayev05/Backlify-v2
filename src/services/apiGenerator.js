@@ -10,17 +10,17 @@ class APIGenerator {
     this.supabase = createClient(config.supabase.url, config.supabase.key);
   }
 
-  generateEndpoints(tableSchemas, userId = 'default') {
+  generateEndpoints(tableSchemas, XAuthUserId = 'default') {
     // Make a deep copy of the table schemas to ensure isolation
     const safeTableSchemas = JSON.parse(JSON.stringify(tableSchemas));
     
     // Create a new router instance for each API
     const router = express.Router();
     
-    // Store userId as a property on the router
+    // Store XAuthUserId as a property on the router
     // Use Object.defineProperty to make it non-enumerable and prevent accidental changes
-    Object.defineProperty(router, 'userId', {
-      value: userId,
+    Object.defineProperty(router, 'XAuthUserId', {
+      value: XAuthUserId,
       writable: false,  // Make it read-only
       enumerable: true  // Make it visible for debugging
     });
@@ -62,7 +62,7 @@ class APIGenerator {
     });
 
     // Log router creation
-    console.log(`Creating router instance ${router._instanceId} for userId ${userId} at ${router._createdAt}`);
+    console.log(`Creating router instance ${router._instanceId} for XAuthUserId ${XAuthUserId} at ${router._createdAt}`);
 
     // Add documentation endpoint
     router.get('/', (req, res) => {
@@ -112,7 +112,7 @@ class APIGenerator {
         tables: safeTableSchemas
           .filter(t => t && (t.originalName || t.name))
           .map(t => t.originalName || t.name),
-        userId: userId,
+        XAuthUserId: XAuthUserId,
         endpoints,
         routerInstanceId: router._instanceId,
         createdAt: router._createdAt
@@ -122,7 +122,7 @@ class APIGenerator {
     // Generate endpoints for each table
     safeTableSchemas.forEach(schema => {
       const tableName = schema.originalName || schema.name;
-      const prefixedTableName = schema.prefixedName || `${userId}_${tableName}`;
+      const prefixedTableName = schema.prefixedName || `${XAuthUserId}_${tableName}`;
 
       // GET all items with pagination and filtering
       router.get(`/${tableName}`, async (req, res) => {
@@ -218,10 +218,10 @@ class APIGenerator {
             delete requestData.id;
           }
           
-          // If user_id is missing, set it to the API userId (for backward compatibility)
-          if (requestData.user_id === undefined || requestData.user_id === null || requestData.user_id === "") {
-            console.log(`No user_id provided, setting to API userId: ${router.userId}`);
-            requestData.user_id = router.userId;
+          // If XAuthUserId is missing, set it to the API XAuthUserId (for backward compatibility)
+          if (requestData.XAuthUserId === undefined || requestData.XAuthUserId === null || requestData.XAuthUserId === "") {
+            console.log(`No XAuthUserId provided, setting to API XAuthUserId: ${router.XAuthUserId}`);
+            requestData.XAuthUserId = router.XAuthUserId;
           }
           
           // Add proper timestamps if not provided or if they're placeholder values
@@ -295,7 +295,7 @@ class APIGenerator {
           // First check if record exists
           const { data: checkData, error: checkError } = await supabase
             .from(prefixedTableName)
-            .select('id, user_id')
+            .select('id, XAuthUserId')
             .eq('id', req.params.id)
             .single();
           
@@ -306,14 +306,14 @@ class APIGenerator {
           // Clone the request body to avoid modifying it
           const updateData = { ...req.body };
           
-          // Don't allow removing the user_id 
-          if (updateData.user_id === undefined || updateData.user_id === null || updateData.user_id === "") {
-            // Use the existing user_id from the record
-            if (checkData.user_id) {
-              updateData.user_id = checkData.user_id;
+          // Don't allow removing the XAuthUserId 
+          if (updateData.XAuthUserId === undefined || updateData.XAuthUserId === null || updateData.XAuthUserId === "") {
+            // Use the existing XAuthUserId from the record
+            if (checkData.XAuthUserId) {
+              updateData.XAuthUserId = checkData.XAuthUserId;
             } else {
-              // If somehow the existing record has no user_id, use the API userId
-              updateData.user_id = router.userId;
+              // If somehow the existing record has no XAuthUserId, use the API XAuthUserId
+              updateData.XAuthUserId = router.XAuthUserId;
             }
           }
           
@@ -375,7 +375,7 @@ class APIGenerator {
     // Add Swagger JSON endpoint 
     router.get('/swagger.json', (req, res) => {
       // Create a new isolated instance of _generateSwaggerSpec for this request
-      const swaggerSpec = _generateSwaggerSpec(safeTableSchemas, userId);
+      const swaggerSpec = _generateSwaggerSpec(safeTableSchemas, XAuthUserId);
       
       // Get the apiId from the request for constructing proper URLs
       const apiId = req.apiId;
@@ -396,7 +396,7 @@ class APIGenerator {
     // Mount the Swagger UI - switch back to middleware approach
     router.use('/docs', swaggerUi.serve);
     router.get('/docs', (req, res, next) => {
-      const swaggerSpec = _generateSwaggerSpec(safeTableSchemas, userId);
+      const swaggerSpec = _generateSwaggerSpec(safeTableSchemas, XAuthUserId);
       
       // Get the apiId from the request for constructing proper URLs
       const apiId = req.apiId;
@@ -416,7 +416,7 @@ class APIGenerator {
         req.swaggerDoc = swaggerSpec;
         return swaggerUi.setup(swaggerSpec, {
           explorer: true,
-          customSiteTitle: `API for ${userId} (Instance: ${router._instanceId})`
+          customSiteTitle: `API for ${XAuthUserId} (Instance: ${router._instanceId})`
         })(req, res, next);
       } catch (error) {
         console.error('Error setting up Swagger UI:', error);
@@ -426,12 +426,12 @@ class APIGenerator {
 
     // Add method to the router to generate Swagger spec with proper context
     router._generateSwaggerSpec = () => {
-      // Get the correct userId from the router instance itself
-      const effectiveUserId = router.userId;
-      console.log(`Router ${router._instanceId} generating Swagger spec for user: ${effectiveUserId}`);
+      // Get the correct XAuthUserId from the router instance itself
+      const effectiveXAuthUserId = router.XAuthUserId;
+      console.log(`Router ${router._instanceId} generating Swagger spec for user: ${effectiveXAuthUserId}`);
       
       // Call the generator method with the isolated context
-      return _generateSwaggerSpec(safeTableSchemas, effectiveUserId);
+      return _generateSwaggerSpec(safeTableSchemas, effectiveXAuthUserId);
     };
 
     return router;
@@ -439,14 +439,14 @@ class APIGenerator {
 }
 
 // Create a standalone function version of _generateSwaggerSpec that doesn't depend on 'this'
-function _generateSwaggerSpec(tableSchemas, userId) {
+function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
   // Make a safe copy to prevent modification
   const safeSchemas = JSON.parse(JSON.stringify(tableSchemas));
   
-  // Use the provided userId
-  const effectiveUserId = userId || 'default';
+  // Use the provided XAuthUserId
+  const effectiveXAuthUserId = XAuthUserId || 'default';
   
-  console.log('Generating Swagger spec with userId:', effectiveUserId);
+  console.log('Generating Swagger spec with XAuthUserId:', effectiveXAuthUserId);
   
   // Build the paths from the schemas
   const paths = {};
@@ -584,6 +584,16 @@ function _generateSwaggerSpec(tableSchemas, userId) {
     if (!tableName) return; // Skip if no table name
     
     const properties = {};
+    const requiredFields = [];
+    
+    // Collect all foreign key relationships for this table
+    const relationships = schema.relationships || [];
+    
+    // Get a list of all foreign key columns
+    const foreignKeyColumns = relationships
+      .filter(rel => rel.sourceTable === tableName || rel.sourceTable === schema.name)
+      .map(rel => rel.sourceColumn);
+      
     schema.columns.forEach(col => {
       // Safety check for column
       if (!col || !col.name) return;
@@ -591,6 +601,19 @@ function _generateSwaggerSpec(tableSchemas, userId) {
       let type = 'string';
       let format = undefined;
       let example = undefined;
+      let required = false;
+      
+      // Check if column has constraints that indicate it's required
+      if (col.constraints) {
+        const constraints = Array.isArray(col.constraints) 
+          ? col.constraints.join(' ').toLowerCase() 
+          : (typeof col.constraints === 'string' ? col.constraints.toLowerCase() : '');
+          
+        if (constraints.includes('not null') || constraints.includes('primary key')) {
+          required = true;
+          requiredFields.push(col.name);
+        }
+      }
       
       // Handle different data types
       if (col.type.includes('int')) {
@@ -612,12 +635,11 @@ function _generateSwaggerSpec(tableSchemas, userId) {
           // Exclude ID field from example since it's auto-generated
           type = 'string';
           format = 'uuid';
-          example = undefined; // No example needed for auto-generated field
+          example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"; // Include a placeholder UUID
         } else {
           type = 'string'; 
           format = 'uuid';
-          // Only include UUID example for non-auto-generated fields
-          example = col.name.endsWith('_id') ? null : undefined;
+          example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"; // Include a placeholder UUID
         }
       } else {
         // Regular string field
@@ -631,6 +653,42 @@ function _generateSwaggerSpec(tableSchemas, userId) {
         ...(example !== undefined ? { example } : {})
       };
     });
+    
+    // Check for missing foreign key fields that might be added later in relationships
+    relationships.forEach(rel => {
+      // Only process relationships where this table is the source
+      if ((rel.sourceTable === tableName || rel.sourceTable === schema.name) && 
+          !properties[rel.sourceColumn]) {
+        
+        // Add this foreign key to the properties
+        properties[rel.sourceColumn] = {
+          type: 'string',
+          format: 'uuid',
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          description: `Foreign key to ${rel.targetTable}.${rel.targetColumn || 'id'}`
+        };
+        
+        // If this is a required relationship, add to required fields
+        if (rel.required) {
+          requiredFields.push(rel.sourceColumn);
+        }
+      }
+    });
+    
+    // Special handling for role_id (common field that might be missing)
+    if (tableName === 'users' && !properties['role_id']) {
+      properties['role_id'] = {
+        type: 'string',
+        format: 'uuid',
+        example: "a52e1330-ad67-480c-9968-1e97e79da98d",
+        description: "Foreign key to roles.id"
+      };
+      
+      // Add to required fields if not already there
+      if (!requiredFields.includes('role_id')) {
+        requiredFields.push('role_id');
+      }
+    }
     
     // Add specific examples for timestamp fields
     if (!properties['created_at']) {
@@ -651,7 +709,8 @@ function _generateSwaggerSpec(tableSchemas, userId) {
     
     schemas[tableName] = {
       type: 'object',
-      properties
+      properties,
+      required: requiredFields.length > 0 ? requiredFields : undefined
     };
   });
   
@@ -659,7 +718,7 @@ function _generateSwaggerSpec(tableSchemas, userId) {
   return {
     openapi: "3.0.0",
     info: {
-      title: `API for User ${effectiveUserId}`,
+      title: `API for User ${effectiveXAuthUserId}`,
       version: "1.0.0",
       description: 'API generated by Backlify'
     },
@@ -680,6 +739,6 @@ const apiGenerator = new APIGenerator();
 
 // Export the class methods and standalone functions
 module.exports = {
-  generateEndpoints: (tableSchemas, userId) => apiGenerator.generateEndpoints(tableSchemas, userId),
+  generateEndpoints: (tableSchemas, XAuthUserId) => apiGenerator.generateEndpoints(tableSchemas, XAuthUserId),
   _generateSwaggerSpec
 }; 

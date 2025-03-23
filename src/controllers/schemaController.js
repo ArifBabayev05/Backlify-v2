@@ -12,15 +12,15 @@ class SchemaController {
    */
   getSchema(req, res) {
     const { apiId } = req.params;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Getting schema for API ${apiId} for user ${userId}`);
+    console.log(`Getting schema for API ${apiId} for user ${XAuthUserId}`);
     
     // Return a placeholder response
     res.json({
       message: 'Schema retrieved successfully',
       apiId,
-      userId,
+      XAuthUserId,
       schema: {
         tables: []
       }
@@ -33,13 +33,13 @@ class SchemaController {
   updateSchema(req, res) {
     const { apiId } = req.params;
     const { tables } = req.body;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Updating schema for API ${apiId} for user ${userId}`);
+    console.log(`Updating schema for API ${apiId} for user ${XAuthUserId}`);
     
     // Store pending changes
     if (!this.pendingChanges.has(apiId)) {
-      this.pendingChanges.set(apiId, { userId, tables: [] });
+      this.pendingChanges.set(apiId, { XAuthUserId, tables: [] });
     }
     
     // Update pending changes
@@ -57,9 +57,9 @@ class SchemaController {
    */
   applySchemaChanges(req, res) {
     const { apiId } = req.params;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Applying schema changes for API ${apiId} for user ${userId}`);
+    console.log(`Applying schema changes for API ${apiId} for user ${XAuthUserId}`);
     
     // Check if there are pending changes
     if (!this.pendingChanges.has(apiId)) {
@@ -86,9 +86,9 @@ class SchemaController {
    */
   getPendingChanges(req, res) {
     const { apiId } = req.params;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Getting pending changes for API ${apiId} for user ${userId}`);
+    console.log(`Getting pending changes for API ${apiId} for user ${XAuthUserId}`);
     
     // Check if there are pending changes
     if (!this.pendingChanges.has(apiId)) {
@@ -111,9 +111,9 @@ class SchemaController {
    */
   cancelPendingChanges(req, res) {
     const { apiId } = req.params;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Canceling pending changes for API ${apiId} for user ${userId}`);
+    console.log(`Canceling pending changes for API ${apiId} for user ${XAuthUserId}`);
     
     // Check if there are pending changes
     if (!this.pendingChanges.has(apiId)) {
@@ -137,9 +137,9 @@ class SchemaController {
   addTable(req, res) {
     const { apiId } = req.params;
     const { table } = req.body;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Adding table to schema for API ${apiId} for user ${userId}`);
+    console.log(`Adding table to schema for API ${apiId} for user ${XAuthUserId}`);
     
     // Validate table
     if (!table || !table.name) {
@@ -150,7 +150,7 @@ class SchemaController {
     
     // Initialize pending changes if needed
     if (!this.pendingChanges.has(apiId)) {
-      this.pendingChanges.set(apiId, { userId, tables: [] });
+      this.pendingChanges.set(apiId, { XAuthUserId, tables: [] });
     }
     
     // Add table to pending changes
@@ -170,9 +170,9 @@ class SchemaController {
   updateTable(req, res) {
     const { apiId, tableName } = req.params;
     const { table } = req.body;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Updating table ${tableName} in schema for API ${apiId} for user ${userId}`);
+    console.log(`Updating table ${tableName} in schema for API ${apiId} for user ${XAuthUserId}`);
     
     // Check if there are pending changes
     if (!this.pendingChanges.has(apiId)) {
@@ -209,9 +209,9 @@ class SchemaController {
    */
   removeTable(req, res) {
     const { apiId, tableName } = req.params;
-    const userId = req.userId;
+    const XAuthUserId = req.XAuthUserId;
     
-    console.log(`Removing table ${tableName} from schema for API ${apiId} for user ${userId}`);
+    console.log(`Removing table ${tableName} from schema for API ${apiId} for user ${XAuthUserId}`);
     
     // Check if there are pending changes
     if (!this.pendingChanges.has(apiId)) {

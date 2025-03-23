@@ -9,7 +9,7 @@ class SchemaGenerator {
     this.schemas = new Map();
   }
 
-  async generateSchemas(analysisResult, userId = 'default') {
+  async generateSchemas(analysisResult, XAuthUserId = 'default') {
     const createdTables = [];
     
     try {
@@ -24,16 +24,16 @@ class SchemaGenerator {
       // First pass: Create all tables with all columns including FK columns
       console.log("First pass: Creating all tables...");
       for (const table of tablesData) {
-        // Add userId prefix to table name
-        const prefixedTableName = `${userId}_${table.name}`;
+        // Add XAuthUserId prefix to table name
+        const prefixedTableName = `${XAuthUserId}_${table.name}`;
         const originalName = table.name;
         table.name = prefixedTableName;
         
-        // Store schema in memory with userId prefix
+        // Store schema in memory with XAuthUserId prefix
         this.schemas.set(prefixedTableName, table);
         
-        // Create table in Supabase in public schema with userId prefix
-        const createResult = await this._createTable(table, userId);
+        // Create table in Supabase in public schema with XAuthUserId prefix
+        const createResult = await this._createTable(table, XAuthUserId);
         if (createResult.success) {
           console.log(`Table ${prefixedTableName} created successfully`);
           createdTables.push({ 
@@ -58,11 +58,11 @@ class SchemaGenerator {
             // Update relationship to use prefixed table names
             const result = await this._createRelationship(
               table.name,  // Already prefixed
-              `${userId}_${rel.targetTable}`,
+              `${XAuthUserId}_${rel.targetTable}`,
               rel.type,
               rel.sourceColumn,
               rel.targetColumn || 'id',  // Default to id if not specified
-              userId
+              XAuthUserId
             );
             
             console.log(`Relationship result: ${JSON.stringify(result)}`);
@@ -73,7 +73,7 @@ class SchemaGenerator {
       // Third pass: Add sample data
       console.log("Third pass: Adding sample data...");
       for (const table of tablesData) {
-        await this._addSampleData(table, userId);
+        await this._addSampleData(table, XAuthUserId);
       }
 
       return createdTables;
@@ -116,7 +116,7 @@ GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
     }
   }
 
-  async _createTable(tableSchema, userId) {
+  async _createTable(tableSchema, XAuthUserId) {
     const { name } = tableSchema;
     
     // Convert our schema to SQL
@@ -141,12 +141,12 @@ GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
     );
   }
 
-  async _addSampleData(tableSchema, userId) {
+  async _addSampleData(tableSchema, XAuthUserId) {
     const { name } = tableSchema;
     
     try {
       // Generate sample data SQL
-      const insertSQL = this._generateSampleDataSQL(tableSchema, userId);
+      const insertSQL = this._generateSampleDataSQL(tableSchema, XAuthUserId);
       if (!insertSQL) {
         console.log(`No sample data to add for ${name}`);
         return { success: true, message: 'No sample data to add' };
@@ -271,9 +271,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
       columnDefinitions.push('"updated_at" timestamp with time zone DEFAULT now()');
     }
     
-    // Add user_id column if not present
-    if (!columns.find(col => col.name === 'user_id')) {
-      columnDefinitions.push('"user_id" varchar(255) NOT NULL');
+    // Add XAuthUserId column if not present
+    if (!columns.find(col => col.name === 'XAuthUserId')) {
+      columnDefinitions.push('"XAuthUserId" varchar(255) NOT NULL');
     }
     
     // Create the table
@@ -362,7 +362,7 @@ $$;
     return sql;
   }
 
-  _generateSampleDataSQL(tableSchema, userId) {
+  _generateSampleDataSQL(tableSchema, XAuthUserId) {
     // Similar safety checks and better foreign key handling
     const { name, columns } = tableSchema;
     
@@ -376,12 +376,12 @@ $$;
         return;
       } else if (col.name === 'created_at' || col.name === 'updated_at') {
         columnValues[col.name] = "now()";
-      } else if (col.name === 'user_id') {
-        columnValues[col.name] = `'${userId}'`;
-      } else if (col.name.endsWith('_id') && col.name !== 'user_id') {
+      } else if (col.name === 'XAuthUserId') {
+        columnValues[col.name] = `'${XAuthUserId}'`;
+      } else if (col.name.endsWith('_id') && col.name !== 'XAuthUserId') {
         // Check if the target table exists before creating a foreign key reference
         const targetTable = col.name.replace('_id', '');
-        const targetTableName = `${userId}_${targetTable}`;
+        const targetTableName = `${XAuthUserId}_${targetTable}`;
         
         // Instead of a direct reference that might fail, use a safer approach
         columnValues[col.name] = `(SELECT id FROM "${targetTableName}" LIMIT 1)`;
@@ -408,9 +408,9 @@ $$;
       }
     });
     
-    // Make sure user_id is included
-    if (!columnValues['user_id']) {
-      columnValues['user_id'] = `'${userId}'`;
+    // Make sure XAuthUserId is included
+    if (!columnValues['XAuthUserId']) {
+      columnValues['XAuthUserId'] = `'${XAuthUserId}'`;
     }
     
     // Create the insert statement
@@ -438,7 +438,7 @@ $$;
   }
 
   // New method: Generate schemas without creating tables in Supabase
-  async generateSchemasWithoutCreating(analysisResult, userId = 'default') {
+  async generateSchemasWithoutCreating(analysisResult, XAuthUserId = 'default') {
     try {
       // Make a deep copy of the tables to avoid modifying the original
       const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
@@ -449,8 +449,8 @@ $$;
       const processedTables = tablesData.map(table => {
         // Preserve original table name
         const originalName = table.name;
-        // Add userId prefix to table name (for when it will be created later)
-        const prefixedTableName = `${userId}_${table.name}`;
+        // Add XAuthUserId prefix to table name (for when it will be created later)
+        const prefixedTableName = `${XAuthUserId}_${table.name}`;
         
         // Return the complete table structure with both original and prefixed names
         return {

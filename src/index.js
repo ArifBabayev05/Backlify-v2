@@ -44,20 +44,20 @@ app.use(express.urlencoded({ extended: true }));
 // Add a route for authenticating (if you have authentication middleware, you'd add it here)
 // This is a placeholder for now - you'd need to implement proper authentication
 app.use((req, res, next) => {
-  // Try to get the userId from various header formats to handle case-sensitivity
-  const userId = req.headers['x-user-id'] || 
+  // Try to get the XAuthUserId from various header formats to handle case-sensitivity
+  const XAuthUserId = req.headers['x-user-id'] || 
                 req.headers['X-USER-ID'] || 
                 req.headers['X-User-Id'] || 
                 req.headers['x-user-id'.toLowerCase()] ||
                 req.header('x-user-id') ||
-                req.body.userId ||
+                req.body.XAuthUserId ||
                 'default';
   
   // Log all headers to debug the issue
-  console.log('Using userId:', userId);
+  console.log('Using XAuthUserId:', XAuthUserId);
   
-  // Set userId on the request object
-  req.userId = userId;
+  // Set XAuthUserId on the request object
+  req.XAuthUserId = XAuthUserId;
   
   next();
 });
@@ -135,7 +135,7 @@ app.post('/auth/register', async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      userId: username,
+      XAuthUserId: username,
       email
     });
   } catch (error) {
@@ -191,10 +191,10 @@ app.post('/auth/login', async (req, res) => {
       });
     }
     
-    // Return the userId (username) without token
+    // Return the XAuthUserId (username) without token
     res.json({
       success: true,
-      userId: user.username,
+      XAuthUserId: user.username,
       email: user.email,
       message: 'Authentication successful'
     });
@@ -212,18 +212,18 @@ app.post('/generate-schema', (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
-  const { prompt, userId } = req.body;
+  const { prompt, XAuthUserId } = req.body;
   
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
   
-  // Use userId from body or from the authenticated user
-  const userIdToUse = userId || req.userId;
+  // Use XAuthUserId from body or from the authenticated user
+  const XAuthUserIdToUse = XAuthUserId || req.XAuthUserId;
   
   // Call the AI service to generate schema
   try {
-    apiGeneratorController.generateDatabaseSchema(prompt, userIdToUse)
+    apiGeneratorController.generateDatabaseSchema(prompt, XAuthUserIdToUse)
       .then(tables => {
         // Validate that we have proper table structures
         if (!tables || !Array.isArray(tables) || tables.length === 0) {
@@ -277,7 +277,7 @@ app.post('/generate-schema', (req, res) => {
         // Send back exactly the structure needed for create-api-from-schema
         res.json({
           success: true,
-          userId: userIdToUse,
+          XAuthUserId: XAuthUserIdToUse,
           tables: validTables, // Return only the validated tables with proper structure
         });
       })
@@ -296,7 +296,7 @@ app.post('/modify-schema', (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
-  const { prompt, tables, userId } = req.body;
+  const { prompt, tables, XAuthUserId } = req.body;
   
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
@@ -309,12 +309,12 @@ app.post('/modify-schema', (req, res) => {
     });
   }
   
-  // Use userId from body or from the authenticated user
-  const userIdToUse = userId || req.userId;
+  // Use XAuthUserId from body or from the authenticated user
+  const XAuthUserIdToUse = XAuthUserId || req.XAuthUserId;
   
   // Call the AI service to modify the existing schema
   try {
-    apiGeneratorController.modifyDatabaseSchema(prompt, tables, userIdToUse)
+    apiGeneratorController.modifyDatabaseSchema(prompt, tables, XAuthUserIdToUse)
       .then(modifiedTables => {
         // Validate that we have proper table structures
         if (!modifiedTables || !Array.isArray(modifiedTables) || modifiedTables.length === 0) {
@@ -368,7 +368,7 @@ app.post('/modify-schema', (req, res) => {
         // Send back the modified schema
         res.json({
           success: true,
-          userId: userIdToUse,
+          XAuthUserId: XAuthUserIdToUse,
           tables: validTables, // Return only the validated tables with proper structure
         });
       })
@@ -388,18 +388,18 @@ app.post('/create-api-from-schema', (req, res) => {
   setCorsHeaders(res);
   
   let tables;
-  let userId;
+  let XAuthUserId;
   
   // Handle both formats:
-  // 1. Direct { tables: [...], userId: "..." }
-  // 2. Output from generate-schema { success: true, userId: "...", tables: [...] }
+  // 1. Direct { tables: [...], XAuthUserId: "..." }
+  // 2. Output from generate-schema { success: true, XAuthUserId: "...", tables: [...] }
   if (req.body.tables) {
     tables = req.body.tables;
-    userId = req.body.userId || req.userId;
+    XAuthUserId = req.body.XAuthUserId || req.XAuthUserId;
   } else if (req.body.success && req.body.tables) {
     // This is likely the full response from generate-schema
     tables = req.body.tables;
-    userId = req.body.userId || req.userId;
+    XAuthUserId = req.body.XAuthUserId || req.XAuthUserId;
   } else {
     return res.status(400).json({ 
       error: 'Valid tables structure is required',
@@ -437,20 +437,20 @@ app.post('/create-api-from-schema', (req, res) => {
     }
   });
   
-  const userIdToUse = userId || req.userId;
+  const XAuthUserIdToUse = XAuthUserId || req.XAuthUserId;
   
-  console.log(`Creating API from schema for user: ${userIdToUse}`);
+  console.log(`Creating API from schema for user: ${XAuthUserIdToUse}`);
   console.log(`Number of tables in schema: ${tables.length}`);
   
   // Generate API from the provided schema
   try {
     // This would call the API generator with the provided schema
-    apiGeneratorController.generateAPIFromSchema(tables, userIdToUse)
+    apiGeneratorController.generateAPIFromSchema(tables, XAuthUserIdToUse)
       .then(result => {
         res.json({
           success: true,
           swagger_url: `/api/${result.apiId}/docs`,
-          userId: userIdToUse,
+          XAuthUserId: XAuthUserIdToUse,
           apiId: result.apiId,
           tables: tables, // Include the original tables in the response
           message: 'API successfully generated and tables created in Supabase',
@@ -467,17 +467,17 @@ app.post('/create-api-from-schema', (req, res) => {
   }
 });
 
-// Generate API endpoint - pass userId from the request
+// Generate API endpoint - pass XAuthUserId from the request
 app.post('/generate-api', (req, res) => {
-  // Use userId from the body if specified, otherwise use the one from headers
+  // Use XAuthUserId from the body if specified, otherwise use the one from headers
   // This allows explicit overriding via the request body
-  const userId = req.body.userId || req.userId;
+  const XAuthUserId = req.body.XAuthUserId || req.XAuthUserId;
   
-  // Make sure we use a consistent userId throughout
-  req.body.userId = userId;
+  // Make sure we use a consistent XAuthUserId throughout
+  req.body.XAuthUserId = XAuthUserId;
   
-  // Log the userId being used to generate the API
-  console.log(`Generating API with userId: ${userId}`);
+  // Log the XAuthUserId being used to generate the API
+  console.log(`Generating API with XAuthUserId: ${XAuthUserId}`);
   
   // In a critical section to avoid race conditions
   try {
@@ -491,7 +491,7 @@ app.post('/generate-api', (req, res) => {
 // Get SQL for an API - verify user owns the API
 app.get('/api/:apiId/sql', (req, res) => {
   const apiId = req.params.apiId;
-  const userId = req.userId;
+  const XAuthUserId = req.XAuthUserId;
   
   // Check if API exists
   if (!apiGeneratorController.generatedApis.has(apiId)) {
@@ -511,14 +511,14 @@ app.get('/api/:apiId/sql', (req, res) => {
 
 // Add route to get all APIs for a user
 app.get('/my-apis', (req, res) => {
-  const userId = req.userId;
-  const userApis = apiGeneratorController.getUserAPIs(userId);
+  const XAuthUserId = req.XAuthUserId;
+  const userApis = apiGeneratorController.getUserAPIs(XAuthUserId);
   
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
   res.json({
-    userId,
+    XAuthUserId,
     apis: userApis
   });
 });
@@ -536,8 +536,8 @@ app.use('/api/:apiId', (req, res, next) => {
   
   // Log information about this API and request
   console.log(`API ${apiId} access:`, {
-    apiUserId: router.userId,
-    requestUserId: req.userId,
+    apiXAuthUserId: router.XAuthUserId,
+    requestXAuthUserId: req.XAuthUserId,
     apiMetadata: apiPublisher.apiMetadata.get(apiId)
   });
   
@@ -557,7 +557,7 @@ app.use('/api/:apiId', (req, res, next) => {
 // Add this route after your existing routes - verify user owns the API
 app.get('/setup-script/:apiId', (req, res) => {
   const { apiId } = req.params;
-  const userId = req.userId;
+  const XAuthUserId = req.XAuthUserId;
   
   if (!apiGeneratorController.generatedApis.has(apiId)) {
     // Ensure CORS headers are set even for error responses
@@ -638,10 +638,10 @@ app.use('/api/:apiId/docs', (req, res, next) => {
   }
   
   console.log(`Swagger UI access for API ${apiId}:`);
-  console.log('Router userId:', router.userId);
+  console.log('Router XAuthUserId:', router.XAuthUserId);
   console.log('Router instanceId:', router._instanceId);
   console.log('Router createdAt:', router._createdAt);
-  console.log('Request userId:', req.userId);
+  console.log('Request XAuthUserId:', req.XAuthUserId);
   console.log('Headers:', req.headers);
   
   // NOTE: User validation check removed to allow any user to access any API documentation
@@ -682,8 +682,8 @@ app.use('/api/:apiId/docs', (req, res, next) => {
     swaggerSpec = JSON.parse(JSON.stringify(swaggerSpec));
     
     // Log the user ID used for this swagger spec
-    const apiUserId = router.userId || 'default';
-    console.log('Swagger spec being served for user:', apiUserId);
+    const apiXAuthUserId = router.XAuthUserId || 'default';
+    console.log('Swagger spec being served for user:', apiXAuthUserId);
     
     // Fix common issues with the spec
     
@@ -712,22 +712,22 @@ app.use('/api/:apiId/docs', (req, res, next) => {
       swaggerSpec.paths = {};
     }
     
-    // 5. Update the API title to use the correct userId
+    // 5. Update the API title to use the correct XAuthUserId
     if (swaggerSpec.info) {
-      swaggerSpec.info.title = `API for User ${apiUserId}`;
+      swaggerSpec.info.title = `API for User ${apiXAuthUserId}`;
       
       // Add router instance details to the title for debugging
       swaggerSpec.info.title += ` (Instance: ${router._instanceId.substring(0, 6)}...)`;
       
       // Add information about who created this API
       swaggerSpec.info.description = swaggerSpec.info.description || '';
-      swaggerSpec.info.description += `\n\n**Created by:** ${apiUserId}`;
+      swaggerSpec.info.description += `\n\n**Created by:** ${apiXAuthUserId}`;
       swaggerSpec.info.description += `\n\n**Created at:** ${router._createdAt}`;
       swaggerSpec.info.description += `\n\n**Router Instance ID:** ${router._instanceId}`;
       
       // Add note if user is viewing as someone else
-      if (req.userId !== apiUserId) {
-        swaggerSpec.info.description += `\n\nYou are viewing this API as user "${req.userId}" but it belongs to user "${apiUserId}".`;
+      if (req.XAuthUserId !== apiXAuthUserId) {
+        swaggerSpec.info.description += `\n\nYou are viewing this API as user "${req.XAuthUserId}" but it belongs to user "${apiXAuthUserId}".`;
       }
     }
     
@@ -753,7 +753,7 @@ app.use('/api/:apiId/docs', (req, res, next) => {
     req.swaggerDoc = swaggerSpec;
     swaggerUi.setup(swaggerSpec, { 
       explorer: true,
-      customSiteTitle: `API for ${router.userId} (ID: ${apiId})`,
+      customSiteTitle: `API for ${router.XAuthUserId} (ID: ${apiId})`,
     })(req, res, next);
   } catch (error) {
     console.error('Error setting up Swagger UI:', error);
@@ -767,7 +767,7 @@ app.use('/api/:apiId/docs', (req, res, next) => {
 // Add a debug endpoint to view in-memory data
 app.get('/api/:apiId/debug-memory', (req, res) => {
   const { apiId } = req.params;
-  const userId = req.userId;
+  const XAuthUserId = req.XAuthUserId;
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
@@ -800,7 +800,7 @@ app.get('/api/:apiId/debug-memory', (req, res) => {
 // Add debug endpoint to check API structure
 app.get('/debug/api/:apiId', (req, res) => {
   const apiId = req.params.apiId;
-  const userId = req.userId;
+  const XAuthUserId = req.XAuthUserId;
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {

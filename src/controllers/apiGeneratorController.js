@@ -6,17 +6,17 @@ const apiPublisher = require('../services/apiPublisher');
 class APIGeneratorController {
   constructor() {
     this.generatedApis = new Map();
-    // Add a mapping to track APIs by userId
+    // Add a mapping to track APIs by XAuthUserId
     this.userApiMapping = new Map();
   }
 
   // Helper method to generate SQL
-  generateSQL(tables, userId) {
+  generateSQL(tables, XAuthUserId) {
     // Remove schema name prefix, use table name prefixes instead
     
     let sql = `-- Generated SQL for Backlify API
 -- Generated at: ${new Date().toISOString()}
--- User: ${userId}
+-- User: ${XAuthUserId}
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -26,25 +26,25 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
     // First create all tables without relationships
     tables.forEach(schema => {
-      // Add userId to table name
-      const tableName = `${userId}_${schema.name}`;
+      // Add XAuthUserId to table name
+      const tableName = `${XAuthUserId}_${schema.name}`;
       const modifiedSchema = {...schema, name: tableName};
       
-      sql += this.generateTableSQL(modifiedSchema, userId);
+      sql += this.generateTableSQL(modifiedSchema, XAuthUserId);
       sql += '\n\n';
     });
 
     // Then add all foreign key constraints
     tables.forEach(schema => {
       if (schema.relationships && schema.relationships.length > 0) {
-        // Add userId to table name for relationships
-        const tableName = `${userId}_${schema.name}`;
+        // Add XAuthUserId to table name for relationships
+        const tableName = `${XAuthUserId}_${schema.name}`;
         const modifiedSchema = {
           ...schema, 
           name: tableName,
           relationships: schema.relationships.map(rel => ({
             ...rel,
-            targetTable: `${userId}_${rel.targetTable}`
+            targetTable: `${XAuthUserId}_${rel.targetTable}`
           }))
         };
         
@@ -56,11 +56,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     // Add sample data for each table
     sql += `-- Insert sample data\n`;
     tables.forEach(schema => {
-      // Add userId to table name for sample data
-      const tableName = `${userId}_${schema.name}`;
+      // Add XAuthUserId to table name for sample data
+      const tableName = `${XAuthUserId}_${schema.name}`;
       const modifiedSchema = {...schema, name: tableName};
       
-      sql += this.generateSampleDataSQL(modifiedSchema, userId);
+      sql += this.generateSampleDataSQL(modifiedSchema, XAuthUserId);
       sql += '\n\n';
     });
 
@@ -68,7 +68,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
   }
 
   // Generate table SQL without relationships
-  generateTableSQL(tableSchema, userId) {
+  generateTableSQL(tableSchema, XAuthUserId) {
     const { name, columns, relationships = [] } = tableSchema;
     const fullTableName = name;
 
@@ -180,9 +180,9 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
 
   async generateAPI(req, res) {
     try {
-      const { prompt, userId = 'default' } = req.body;
+      const { prompt, XAuthUserId = 'default' } = req.body;
       
-      console.log(`Generating API for prompt: "${prompt}" and user: ${userId}`);
+      console.log(`Generating API for prompt: "${prompt}" and user: ${XAuthUserId}`);
       
       // Analyze prompt with Mistral AI
       console.log('Analyzing prompt with Mistral AI...');
@@ -190,19 +190,19 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       
       // Generate database schema
       console.log('Generating database schema...');
-      const createdTables = await schemaGenerator.generateSchemas(analysisResult, userId);
+      const createdTables = await schemaGenerator.generateSchemas(analysisResult, XAuthUserId);
       
       // Deep clone the tables to prevent any shared references
       const safeTableSchemas = JSON.parse(JSON.stringify(createdTables));
       
       // Create API endpoints with isolated schemas
       console.log('Creating API endpoints...');
-      const router = apiGenerator.generateEndpoints(safeTableSchemas, userId);
+      const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId);
       
       // Create isolated metadata
       const safeMetadata = {
         prompt,
-        userId,
+        XAuthUserId,
         tables: safeTableSchemas,
         createdAt: new Date().toISOString()
       };
@@ -214,17 +214,17 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       // Store in memory for quick access - use a deep clone
       this.generatedApis.set(apiId, JSON.parse(JSON.stringify({
         prompt,
-        userId,
+        XAuthUserId,
         tables: safeTableSchemas,
         apiId,
         sql: analysisResult.sql || ''
       })));
       
       // Add to user API mapping
-      if (!this.userApiMapping.has(userId)) {
-        this.userApiMapping.set(userId, new Set());
+      if (!this.userApiMapping.has(XAuthUserId)) {
+        this.userApiMapping.set(XAuthUserId, new Set());
       }
-      this.userApiMapping.get(userId).add(apiId);
+      this.userApiMapping.get(XAuthUserId).add(apiId);
       
       res.json({
         message: 'API created successfully',
@@ -245,14 +245,14 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       // Create a brand new deep clone of metadata
       const safeMetadata = JSON.parse(JSON.stringify(metadata));
       
-      // Get userId and tables from metadata
-      const userId = safeMetadata.userId || 'default';
+      // Get XAuthUserId and tables from metadata
+      const XAuthUserId = safeMetadata.XAuthUserId || 'default';
       const tables = safeMetadata.tables || [];
       
       // Do any additional processing here
             
       // Generate a new router with fresh state
-      const router = apiGenerator.generateEndpoints(tables, userId);
+      const router = apiGenerator.generateEndpoints(tables, XAuthUserId);
       
       // Publish the API with original metadata
       const apiId = apiPublisher.publishAPI(router, safeMetadata);
@@ -269,9 +269,9 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
   }
 
   // Generate database schema from prompt - new method for separate endpoint
-  async generateDatabaseSchema(prompt, userId = 'default') {
+  async generateDatabaseSchema(prompt, XAuthUserId = 'default') {
     try {
-      console.log(`Generating schema for prompt: "${prompt}" and user: ${userId}`);
+      console.log(`Generating schema for prompt: "${prompt}" and user: ${XAuthUserId}`);
       
       // Analyze prompt with Mistral AI
       console.log('Analyzing prompt with Mistral AI...');
@@ -279,7 +279,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       
       // Generate database schema WITHOUT creating tables in Supabase
       console.log('Generating database schema without creating tables...');
-      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, userId);
+      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, XAuthUserId);
       
       // Log the tables structure for debugging
       console.log(`Generated ${processedTables.length} tables for schema`);
@@ -341,9 +341,9 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
   }
   
   // Modify an existing database schema based on a prompt
-  async modifyDatabaseSchema(prompt, existingTables, userId = 'default') {
+  async modifyDatabaseSchema(prompt, existingTables, XAuthUserId = 'default') {
     try {
-      console.log(`Modifying schema for prompt: "${prompt}" and user: ${userId}`);
+      console.log(`Modifying schema for prompt: "${prompt}" and user: ${XAuthUserId}`);
       console.log(`Existing tables: ${existingTables.length}`);
       
       // Create a modification context to inform the AI about the existing schema
@@ -391,7 +391,7 @@ Please modify the existing schema based on the modification request. Return the 
       
       // Fallback: If the AI didn't return a complete schema, use schemaGenerator
       console.log('Generating modified schema using schema generator...');
-      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, userId);
+      const processedTables = await schemaGenerator.generateSchemasWithoutCreating(analysisResult, XAuthUserId);
       
       // Check if we got valid tables back
       if (!processedTables || !Array.isArray(processedTables) || processedTables.length === 0) {
@@ -408,9 +408,9 @@ Please modify the existing schema based on the modification request. Return the 
   }
   
   // Generate API from provided schema - new method for separate endpoint
-  async generateAPIFromSchema(tables, userId = 'default') {
+  async generateAPIFromSchema(tables, XAuthUserId = 'default') {
     try {
-      console.log(`Generating API from provided schema for user: ${userId}`);
+      console.log(`Generating API from provided schema for user: ${XAuthUserId}`);
       
       // Ensure we have a deep clone of the tables
       const safeTableSchemas = JSON.parse(JSON.stringify(tables));
@@ -430,26 +430,26 @@ Please modify the existing schema based on the modification request. Return the 
           
           return {
             ...table,
-            // Ensure name is original (without userId prefix)
+            // Ensure name is original (without XAuthUserId prefix)
             name: table.originalName || table.name
           };
         })
       };
       
       // Now create the tables in Supabase
-      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, userId);
+      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, XAuthUserId);
       console.log(`Created ${createdTables.length} tables in Supabase`);
       
       // Create API endpoints with isolated schemas
       console.log('Creating API endpoints...');
-      const router = apiGenerator.generateEndpoints(safeTableSchemas, userId);
+      const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId);
       
       // Generate SQL for the tables
-      const sql = this.generateSQL(safeTableSchemas, userId);
+      const sql = this.generateSQL(safeTableSchemas, XAuthUserId);
       
       // Create metadata with all necessary information
       const safeMetadata = {
-        userId,
+        XAuthUserId,
         tables: safeTableSchemas,
         createdAt: new Date().toISOString(),
         sql: sql, // Include the SQL in the metadata
@@ -462,7 +462,7 @@ Please modify the existing schema based on the modification request. Return the 
       
       // Store in memory for quick access - use a deep clone
       const apiObject = {
-        userId,
+        XAuthUserId,
         tables: safeTableSchemas,
         apiId,
         sql: sql,
@@ -474,12 +474,12 @@ Please modify the existing schema based on the modification request. Return the 
       this.generatedApis.set(apiId, apiObject);
       
       // Add to user API mapping
-      if (!this.userApiMapping.has(userId)) {
-        this.userApiMapping.set(userId, new Set());
+      if (!this.userApiMapping.has(XAuthUserId)) {
+        this.userApiMapping.set(XAuthUserId, new Set());
       }
-      this.userApiMapping.get(userId).add(apiId);
+      this.userApiMapping.get(XAuthUserId).add(apiId);
       
-      console.log(`API ${apiId} successfully generated and stored for user ${userId}`);
+      console.log(`API ${apiId} successfully generated and stored for user ${XAuthUserId}`);
       
       // Return information about the created API
       return {
@@ -516,8 +516,8 @@ Please modify the existing schema based on the modification request. Return the 
   }
 
   // Add method to get all APIs for a specific user
-  getUserAPIs(userId) {
-    const userApis = this.userApiMapping.get(userId);
+  getUserAPIs(XAuthUserId) {
+    const userApis = this.userApiMapping.get(XAuthUserId);
     if (!userApis) {
       return [];
     }
