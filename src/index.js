@@ -289,11 +289,12 @@ app.post('/create-api-from-schema', (req, res) => {
       .then(result => {
         res.json({
           success: true,
+          swagger_url: `/api/${result.apiId}/docs`,
           userId: userIdToUse,
           apiId: result.apiId,
+          tables: tables, // Include the original tables in the response
           message: 'API successfully generated and tables created in Supabase',
-          endpoints: result.endpoints,
-          swagger_url: `/api/${result.apiId}/docs`
+          endpoints: result.endpoints
         });
       })
       .catch(error => {
