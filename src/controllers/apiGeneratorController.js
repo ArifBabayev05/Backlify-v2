@@ -444,30 +444,42 @@ Please modify the existing schema based on the modification request. Return the 
       console.log('Creating API endpoints...');
       const router = apiGenerator.generateEndpoints(safeTableSchemas, userId);
       
-      // Create metadata
+      // Generate SQL for the tables
+      const sql = this.generateSQL(safeTableSchemas, userId);
+      
+      // Create metadata with all necessary information
       const safeMetadata = {
         userId,
         tables: safeTableSchemas,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        sql: sql, // Include the SQL in the metadata
+        prompt: 'Created from schema', // Add a default prompt
       };
       
-      // Publish API with safe metadata
+      // Publish API with complete metadata
       console.log('Publishing API...');
       const apiId = apiPublisher.publishAPI(router, safeMetadata);
       
       // Store in memory for quick access - use a deep clone
-      this.generatedApis.set(apiId, JSON.parse(JSON.stringify({
+      const apiObject = {
         userId,
         tables: safeTableSchemas,
         apiId,
-        sql: this.generateSQL(safeTableSchemas, userId)
-      })));
+        sql: sql,
+        prompt: safeMetadata.prompt,
+        createdAt: safeMetadata.createdAt,
+        router: router // Include router reference
+      };
+      
+      this.generatedApis.set(apiId, apiObject);
       
       // Add to user API mapping
       if (!this.userApiMapping.has(userId)) {
         this.userApiMapping.set(userId, new Set());
       }
       this.userApiMapping.get(userId).add(apiId);
+      
+      console.log(`API ${apiId} successfully generated and stored for user ${userId}`);
       
       // Return information about the created API
       return {

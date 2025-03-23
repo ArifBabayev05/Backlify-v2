@@ -6,11 +6,20 @@ const apiPublisher = require('./services/apiPublisher');
 const swaggerUi = require('swagger-ui-express');
 const schemaRoutes = require('./routes/schemaRoutes');
 const { ensureCorsHeaders, setCorsHeaders } = require('./middleware/corsMiddleware');
+const bcrypt = require('bcrypt');
+const { createClient } = require('@supabase/supabase-js');
+
 // Load environment variables
 dotenv.config();
 
 // Initialize express app
 const app = express();
+
+// Supabase client setup
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 // Middleware
 // Replace simple CORS setup with a more comprehensive configuration
@@ -57,63 +66,145 @@ app.use((req, res, next) => {
 const apiGeneratorController = require('./controllers/apiGeneratorController');
 
 // Registration endpoint
-app.post('/auth/register', (req, res) => {
+app.post('/auth/register', async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
-  const { email, password, phone, username } = req.body;
+  const { email, password, username } = req.body;
   
   // Basic validation
-  if ((!email && !phone) || !password) {
+  if (!email || !password || !username) {
     return res.status(400).json({ 
       error: 'Missing required fields',
-      details: 'Please provide either email or phone number, and a password'
+      details: 'Please provide email, password, and username'
     });
   }
   
-  // In a real implementation, you would check if the user already exists
-  // and save the new user to a database
-  
-  // For now, generate a userId from email, phone or username
-  const userId = username || (email ? email.split('@')[0] : `user-${phone}`);
-  
-  // Return the created user info
-  res.status(201).json({
-    success: true,
-    message: 'User registered successfully',
-    userId,
-    email,
-    phone
-  });
+  try {
+    // Check if username already exists in Supabase
+    const { data: existingUsers, error: userCheckError } = await supabase
+      .from('users')
+      .select('username')
+      .eq('username', username)
+      .limit(1);
+      
+    if (userCheckError) throw new Error(userCheckError.message);
+    
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(400).json({
+        error: 'Username already taken',
+        details: 'Please choose a different username'
+      });
+    }
+    
+    // Check if email already exists
+    const { data: existingEmails, error: emailCheckError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .limit(1);
+      
+    if (emailCheckError) throw new Error(emailCheckError.message);
+    
+    if (existingEmails && existingEmails.length > 0) {
+      return res.status(400).json({
+        error: 'Email already registered',
+        details: 'This email is already associated with an account'
+      });
+    }
+    
+    // Hash password before storing
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Insert user into Supabase
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([
+        { 
+          username, 
+          email, 
+          password: hashedPassword,
+          created_at: new Date().toISOString()
+        }
+      ])
+      .select();
+      
+    if (insertError) throw new Error(insertError.message);
+    
+    // Return the created user info (without password)
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      userId: username,
+      email
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      error: 'Registration failed',
+      details: error.message
+    });
+  }
 });
 
-// 1. Authentication endpoint
-app.post('/auth/login', (req, res) => {
+// Authentication endpoint
+app.post('/auth/login', async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
-  const { email, password, phone, username } = req.body;
+  const { username, password } = req.body;
   
   // Basic validation
-  if ((!email && !phone && !username) || !password) {
+  if (!username || !password) {
     return res.status(400).json({ 
       error: 'Authentication failed', 
-      details: 'Please provide either email, phone number, or username, and a password'
+      details: 'Please provide username and password'
     });
   }
   
-  // For now, this is a simple mock authentication
-  // In a real implementation, you would validate credentials against a database
-  
-  // Generate userId from the provided credentials
-  const userId = username || (email ? email.split('@')[0] : `user-${phone}`);
-  
-  // Return the userId without token
-  res.json({
-    success: true,
-    userId,
-    message: 'Authentication successful'
-  });
+  try {
+    // Find user by email
+    const { data: users, error: queryError } = await supabase
+      .from('users')
+      .select('username, email, password')
+      .eq('username', username)
+      .limit(1);
+      
+    if (queryError) throw new Error(queryError.message);
+    
+    if (!users || users.length === 0) {
+      return res.status(401).json({
+        error: 'Authentication failed',
+        details: 'Invalid username or password'
+      });
+    }
+    
+    const user = users[0];
+    
+    // Verify password
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    
+    if (!passwordMatch) {
+      return res.status(401).json({
+        error: 'Authentication failed',
+        details: 'Invalid username or password'
+      });
+    }
+    
+    // Return the userId (username) without token
+    res.json({
+      success: true,
+      userId: user.username,
+      email: user.email,
+      message: 'Authentication successful'
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      error: 'Authentication failed',
+      details: error.message
+    });
+  }
 });
 
 // 2. Schema generator API

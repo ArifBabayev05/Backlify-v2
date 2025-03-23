@@ -111,12 +111,43 @@ class APIPublisher {
     if (this.apiInstances.has(apiId)) {
       const router = this.apiInstances.get(apiId);
       console.log(`Found router instance ${router._instanceId} for API ${apiId}`);
+      
+      // Ensure the user mapping is updated
+      const metadata = this.apiMetadata.get(apiId);
+      if (metadata && metadata.userId) {
+        try {
+          // Get the controller to update its mappings
+          const apiGeneratorController = require('../controllers/apiGeneratorController');
+          
+          // Make sure API is in generatedApis if it's not already
+          if (!apiGeneratorController.generatedApis.has(apiId)) {
+            // Add minimal API object to generatedApis
+            apiGeneratorController.generatedApis.set(apiId, {
+              apiId,
+              router,
+              tables: metadata.tables || [],
+              sql: metadata.sql || '',
+              prompt: metadata.prompt || '',
+              createdAt: metadata.createdAt || new Date().toISOString()
+            });
+          }
+          
+          // Ensure API is in userApiMapping
+          if (!apiGeneratorController.userApiMapping.has(metadata.userId)) {
+            apiGeneratorController.userApiMapping.set(metadata.userId, new Set());
+          }
+          apiGeneratorController.userApiMapping.get(metadata.userId).add(apiId);
+        } catch (error) {
+          console.error('Error updating API mappings:', error);
+        }
+      }
+      
       return router;
     }
     
     // If router doesn't exist, try to restore it
     console.log(`Router not found for API ${apiId}, attempting to restore...`);
-    return this._restoreAPI(apiId);
+    return this._restoreAPI(apiId, true); // Use true to update controller
   }
 
   unpublishAPI(apiId) {
@@ -238,7 +269,7 @@ class APIPublisher {
   }
   
   // Restore API from metadata
-  async _restoreAPI(apiId) {
+  async _restoreAPI(apiId, updateController = false) {
     try {
       // Get metadata from database
       const { createClient } = require('@supabase/supabase-js');
@@ -303,6 +334,36 @@ class APIPublisher {
       
       console.log(`Successfully restored API: ${apiId} with router instance ${regeneratedRouter._instanceId}`);
       
+      // If requested, also update the apiGeneratorController maps
+      if (updateController) {
+        try {
+          const apiGeneratorController = require('../controllers/apiGeneratorController');
+          
+          // Create an API object similar to what would be created during initial generation
+          const apiObject = {
+            apiId,
+            router: regeneratedRouter,
+            tables: safeMetadata.tables || [],
+            sql: safeMetadata.sql || '',
+            prompt: safeMetadata.prompt || '',
+            createdAt: safeMetadata.createdAt || safeMetadata.created_at || new Date().toISOString()
+          };
+          
+          // Add to apiGeneratorController's generatedApis map
+          apiGeneratorController.generatedApis.set(apiId, apiObject);
+          
+          // Update the userApiMapping
+          if (!apiGeneratorController.userApiMapping.has(userId)) {
+            apiGeneratorController.userApiMapping.set(userId, new Set());
+          }
+          apiGeneratorController.userApiMapping.get(userId).add(apiId);
+          
+          console.log(`Updated apiGeneratorController maps for API ${apiId}`);
+        } catch (updateError) {
+          console.error('Error updating apiGeneratorController:', updateError);
+        }
+      }
+      
       return regeneratedRouter;
     } catch (error) {
       console.error('Failed to restore API:', error);
@@ -328,8 +389,8 @@ class APIPublisher {
       
       console.log(`Found ${data.length} APIs in registry. Restoring...`);
       
-      // Import the APIGeneratorController module
-      // but get a fresh controller instance for each API to avoid shared state
+      // Get a reference to the APIGeneratorController for user mapping updates
+      const apiGeneratorController = require('../controllers/apiGeneratorController');
       
       // Restore each API
       for (const item of data) {
@@ -355,11 +416,14 @@ class APIPublisher {
           
           // Load the API directly using our restore method
           // which creates a new router instance each time
-          const regeneratedRouter = await this._restoreAPI(apiId);
+          const regeneratedRouter = await this._restoreAPI(apiId, true); // Pass true to update controller
           
           if (!regeneratedRouter) {
             console.error(`Failed to restore API: ${apiId}`);
+            continue;
           }
+          
+          // The controller is now updated directly in _restoreAPI when passing true
         } catch (err) {
           console.error(`Failed to restore API ${item.api_id}:`, err);
         }
