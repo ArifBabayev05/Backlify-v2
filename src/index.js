@@ -154,6 +154,29 @@ app.post('/generate-schema', (req, res) => {
           });
         }
         
+        // Ensure every table has an ID column
+        validTables.forEach(table => {
+          // Check if table already has an ID column
+          const hasIdColumn = table.columns.some(col => 
+            col.name === 'id' && 
+            (col.type.includes('uuid') || col.type.includes('serial'))
+          );
+          
+          // If no ID column, add one
+          if (!hasIdColumn) {
+            console.log(`Adding missing ID column to table: ${table.name}`);
+            // Add UUID primary key column
+            table.columns.unshift({
+              name: 'id',
+              type: 'uuid',
+              constraints: [
+                'primary key',
+                'default uuid_generate_v4()'
+              ]
+            });
+          }
+        });
+        
         // Log the table structure for debugging
         console.log(`Returning ${validTables.length} valid tables with column definitions`);
         validTables.forEach(table => {
@@ -222,6 +245,29 @@ app.post('/modify-schema', (req, res) => {
           });
         }
         
+        // Ensure every table has an ID column
+        validTables.forEach(table => {
+          // Check if table already has an ID column
+          const hasIdColumn = table.columns.some(col => 
+            col.name === 'id' && 
+            (col.type.includes('uuid') || col.type.includes('serial'))
+          );
+          
+          // If no ID column, add one
+          if (!hasIdColumn) {
+            console.log(`Adding missing ID column to table: ${table.name}`);
+            // Add UUID primary key column
+            table.columns.unshift({
+              name: 'id',
+              type: 'uuid',
+              constraints: [
+                'primary key',
+                'default uuid_generate_v4()'
+              ]
+            });
+          }
+        });
+        
         // Log the table structure for debugging
         console.log(`Returning ${validTables.length} valid tables with column definitions after modification`);
         validTables.forEach(table => {
@@ -276,6 +322,29 @@ app.post('/create-api-from-schema', (req, res) => {
       details: 'The tables array must be non-empty'
     });
   }
+  
+  // Ensure every table has an ID column
+  tables.forEach(table => {
+    // Check if table already has an ID column
+    const hasIdColumn = table.columns && table.columns.some(col => 
+      col.name === 'id' && 
+      (col.type.includes('uuid') || col.type.includes('serial'))
+    );
+    
+    // If no ID column, add one
+    if (!hasIdColumn && table.columns) {
+      console.log(`Adding missing ID column to table: ${table.name}`);
+      // Add UUID primary key column
+      table.columns.unshift({
+        name: 'id',
+        type: 'uuid',
+        constraints: [
+          'primary key',
+          'default uuid_generate_v4()'
+        ]
+      });
+    }
+  });
   
   const userIdToUse = userId || req.userId;
   
