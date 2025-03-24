@@ -271,36 +271,20 @@ class APIPublisher {
   // Restore API from metadata
   async _restoreAPI(apiId, updateController = false) {
     try {
-      // Get metadata from database
-      const { createClient } = require('@supabase/supabase-js');
-      const config = require('../config/config');
-      const supabase = createClient(config.supabase.url, config.supabase.key);
+      // Try to get API metadata from the database first
+      let metadata = await this._getApiMetadataFromDb(apiId);
       
-      const { data, error } = await supabase
-        .from('api_registry')
-        .select('metadata')
-        .eq('api_id', apiId)
-        .single();
-        
-      if (error || !data) {
-        console.error('API not found in registry:', apiId);
-        return null;
-      }
-      
-      // Parse metadata, ensure it's an object
-      let metadata;
-      try {
-        metadata = typeof data.metadata === 'string' 
-          ? JSON.parse(data.metadata) 
-          : data.metadata;
-      } catch (e) {
-        console.error('Error parsing API metadata:', e);
+      if (!metadata) {
+        console.error(`API ${apiId} not found in database for restoration`);
         return null;
       }
       
       // Get XAuthUserId from metadata or use default
       const XAuthUserId = metadata.XAuthUserId || 'default';
-      console.log(`Restoring API ${apiId} for user ${XAuthUserId}`);
+      // Get the apiIdentifier from metadata to maintain table name consistency
+      const apiIdentifier = metadata.apiIdentifier;
+      
+      console.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
       
       // Only proceed if we have tables information
       if (!metadata || !metadata.tables || !Array.isArray(metadata.tables)) {
@@ -311,12 +295,33 @@ class APIPublisher {
       // Deep clone the tables to prevent any shared references
       const safeTableSchemas = JSON.parse(JSON.stringify(metadata.tables));
       
+      // CRITICAL: Fix the prefixedName in each table schema to match the apiIdentifier
+      // This ensures the router will access the same tables that were created
+      if (apiIdentifier) {
+        safeTableSchemas.forEach(table => {
+          if (table.prefixedName) {
+            // Extract the original name from the prefixed name
+            const parts = table.prefixedName.split('_');
+            const originalTableName = parts[parts.length - 1];
+            
+            // Recreate the prefixed name with the correct apiIdentifier
+            table.prefixedName = `${XAuthUserId}_${apiIdentifier}_${originalTableName}`;
+            
+            console.log(`Fixed table prefixedName to: ${table.prefixedName}`);
+          }
+        });
+      }
+      
       // Import required modules - IMPORTANT: Get a fresh reference each time
       const { generateEndpoints } = require('../services/apiGenerator');
       
       // Create a new Express router for this API - with the isolated schemas
-      console.log(`Creating new router for API ${apiId}`);
-      const regeneratedRouter = generateEndpoints(safeTableSchemas, XAuthUserId);
+      // Pass the apiIdentifier from metadata to ensure we use the same table names
+      console.log(`Creating new router for API ${apiId} with apiIdentifier: ${apiIdentifier || 'new'}`);
+      const regeneratedRouter = generateEndpoints(safeTableSchemas, XAuthUserId, apiIdentifier);
+      
+      // Log the API identifier being used for verification
+      console.log(`Router created with apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
       
       // Store the regenerated API router
       this.apiInstances.set(apiId, regeneratedRouter);
@@ -326,13 +331,14 @@ class APIPublisher {
         ...metadata,
         apiId,
         XAuthUserId: XAuthUserId,
+        apiIdentifier: apiIdentifier || regeneratedRouter.apiIdentifier, // Store the apiIdentifier used
         restored: true,
         lastAccessed: new Date().toISOString()
       }));
       
       this.apiMetadata.set(apiId, safeMetadata);
       
-      console.log(`Successfully restored API: ${apiId} with router instance ${regeneratedRouter._instanceId}`);
+      console.log(`Successfully restored API: ${apiId} with router instance ${regeneratedRouter._instanceId} and apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
       
       // If requested, also update the apiGeneratorController maps
       if (updateController) {
@@ -342,6 +348,8 @@ class APIPublisher {
           // Create an API object similar to what would be created during initial generation
           const apiObject = {
             apiId,
+            XAuthUserId,
+            apiIdentifier: regeneratedRouter.apiIdentifier, // Include the apiIdentifier
             router: regeneratedRouter,
             tables: safeMetadata.tables || [],
             sql: safeMetadata.sql || '',
@@ -407,9 +415,10 @@ class APIPublisher {
             continue;
           }
           
-          // Log API being restored with its XAuthUserId
+          // Log API being restored with its XAuthUserId and apiIdentifier
           const XAuthUserId = metadata.XAuthUserId || 'default';
-          console.log(`Restoring API ${apiId} for user ${XAuthUserId}`);
+          const apiIdentifier = metadata.apiIdentifier;
+          console.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
           
           // Clone the metadata to prevent shared references
           const safeMetadata = JSON.parse(JSON.stringify(metadata));
@@ -423,13 +432,47 @@ class APIPublisher {
             continue;
           }
           
-          // The controller is now updated directly in _restoreAPI when passing true
+          console.log(`Successfully restored API ${apiId} with identifier ${regeneratedRouter.apiIdentifier}`);
         } catch (err) {
           console.error(`Failed to restore API ${item.api_id}:`, err);
         }
       }
     } catch (error) {
       console.error('Failed to load APIs:', error);
+    }
+  }
+
+  // Helper method to get API metadata from the database
+  async _getApiMetadataFromDb(apiId) {
+    try {
+      // Get metadata from database
+      const { createClient } = require('@supabase/supabase-js');
+      const config = require('../config/config');
+      const supabase = createClient(config.supabase.url, config.supabase.key);
+      
+      const { data, error } = await supabase
+        .from('api_registry')
+        .select('metadata')
+        .eq('api_id', apiId)
+        .single();
+        
+      if (error || !data) {
+        console.error('API not found in registry:', apiId);
+        return null;
+      }
+      
+      // Parse metadata, ensure it's an object
+      try {
+        return typeof data.metadata === 'string' 
+          ? JSON.parse(data.metadata) 
+          : data.metadata;
+      } catch (e) {
+        console.error('Error parsing API metadata:', e);
+        return null;
+      }
+    } catch (error) {
+      console.error(`Error retrieving API metadata for ${apiId}:`, error);
+      return null;
     }
   }
 }

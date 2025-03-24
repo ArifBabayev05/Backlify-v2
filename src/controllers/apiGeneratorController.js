@@ -11,12 +11,14 @@ class APIGeneratorController {
   }
 
   // Helper method to generate SQL
-  generateSQL(tables, XAuthUserId) {
-    // Remove schema name prefix, use table name prefixes instead
+  generateSQL(tables, XAuthUserId, apiIdentifier = null) {
+    // Generate a unique API identifier if not provided
+    const effectiveApiId = apiIdentifier || Math.random().toString(36).substring(2, 8);
     
     let sql = `-- Generated SQL for Backlify API
 -- Generated at: ${new Date().toISOString()}
 -- User: ${XAuthUserId}
+-- API Identifier: ${effectiveApiId}
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -26,8 +28,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
     // First create all tables without relationships
     tables.forEach(schema => {
-      // Add XAuthUserId to table name
-      const tableName = `${XAuthUserId}_${schema.name}`;
+      // Add XAuthUserId AND API identifier to table name
+      const tableName = `${XAuthUserId}_${effectiveApiId}_${schema.name}`;
       const modifiedSchema = {...schema, name: tableName};
       
       sql += this.generateTableSQL(modifiedSchema, XAuthUserId);
@@ -37,14 +39,14 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     // Then add all foreign key constraints
     tables.forEach(schema => {
       if (schema.relationships && schema.relationships.length > 0) {
-        // Add XAuthUserId to table name for relationships
-        const tableName = `${XAuthUserId}_${schema.name}`;
+        // Add XAuthUserId AND API identifier to table name for relationships
+        const tableName = `${XAuthUserId}_${effectiveApiId}_${schema.name}`;
         const modifiedSchema = {
           ...schema, 
           name: tableName,
           relationships: schema.relationships.map(rel => ({
             ...rel,
-            targetTable: `${XAuthUserId}_${rel.targetTable}`
+            targetTable: `${XAuthUserId}_${effectiveApiId}_${rel.targetTable}`
           }))
         };
         
@@ -56,10 +58,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     // Add sample data for each table
     sql += `-- Insert sample data\n`;
     tables.forEach(schema => {
-      // Add XAuthUserId to table name for sample data
-      const tableName = `${XAuthUserId}_${schema.name}`;
+      // Add XAuthUserId AND API identifier to table name for sample data
+      const tableName = `${XAuthUserId}_${effectiveApiId}_${schema.name}`;
       const modifiedSchema = {...schema, name: tableName};
       
+      // Make sure to pass the XAuthUserId to sample data generation
       sql += this.generateSampleDataSQL(modifiedSchema, XAuthUserId);
       sql += '\n\n';
     });
@@ -131,7 +134,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
   }
 
   // Generate sample data SQL
-  generateSampleDataSQL(tableSchema) {
+  generateSampleDataSQL(tableSchema, XAuthUserId) {
     const { name, columns } = tableSchema;
     let sql = `-- Insert sample data into ${name}\n`;
     
@@ -145,6 +148,9 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
         return;
       } else if (col.name === 'created_at' || col.name === 'updated_at') {
         columnValues[col.name] = "now()";
+      } else if (col.name === 'XAuthUserId') {
+        // Use the provided XAuthUserId
+        columnValues[col.name] = `'${XAuthUserId}'`;
       } else if (col.name === 'id' && col.name.endsWith('_id')) {
         // This is likely a foreign key, we'll handle it specially
         const targetTable = col.name.replace('_id', '');
@@ -182,7 +188,10 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
     try {
       const { prompt, XAuthUserId = 'default' } = req.body;
       
-      console.log(`Generating API for prompt: "${prompt}" and user: ${XAuthUserId}`);
+      // Generate a unique API identifier for this specific API instance
+      const apiIdentifier = Math.random().toString(36).substring(2, 8);
+      
+      console.log(`Generating API for prompt: "${prompt}" and user: ${XAuthUserId} with identifier: ${apiIdentifier}`);
       
       // Analyze prompt with Mistral AI
       console.log('Analyzing prompt with Mistral AI...');
@@ -192,6 +201,24 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       console.log('Generating database schema...');
       const createdTables = await schemaGenerator.generateSchemas(analysisResult, XAuthUserId);
       
+      // Ensure all tables are properly prefixed with XAuthUserId AND API identifier
+      createdTables.forEach(table => {
+        // Store the original name for reference
+        table.originalName = table.name;
+        // Set the prefixed name that will be used in the database
+        table.prefixedName = `${XAuthUserId}_${apiIdentifier}_${table.name}`;
+        
+        // For relationships, ensure they point to prefixed tables
+        if (table.relationships && Array.isArray(table.relationships)) {
+          table.relationships.forEach(rel => {
+            // Store original target table
+            rel.originalTargetTable = rel.targetTable;
+            // Update target table to use the prefixed name with API identifier
+            rel.targetTable = `${XAuthUserId}_${apiIdentifier}_${rel.targetTable}`;
+          });
+        }
+      });
+      
       // Deep clone the tables to prevent any shared references
       const safeTableSchemas = JSON.parse(JSON.stringify(createdTables));
       
@@ -199,10 +226,14 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       console.log('Creating API endpoints...');
       const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId);
       
+      // Generate SQL using the apiIdentifier
+      const sql = this.generateSQL(safeTableSchemas, XAuthUserId, apiIdentifier);
+      
       // Create isolated metadata
       const safeMetadata = {
         prompt,
         XAuthUserId,
+        apiIdentifier,
         tables: safeTableSchemas,
         createdAt: new Date().toISOString()
       };
@@ -215,9 +246,10 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       this.generatedApis.set(apiId, JSON.parse(JSON.stringify({
         prompt,
         XAuthUserId,
+        apiIdentifier,
         tables: safeTableSchemas,
         apiId,
-        sql: analysisResult.sql || ''
+        sql: sql || analysisResult.sql || ''
       })));
       
       // Add to user API mapping
@@ -410,10 +442,31 @@ Please modify the existing schema based on the modification request. Return the 
   // Generate API from provided schema - new method for separate endpoint
   async generateAPIFromSchema(tables, XAuthUserId = 'default') {
     try {
-      console.log(`Generating API from provided schema for user: ${XAuthUserId}`);
+      // Generate a unique API identifier for this specific API instance
+      const apiIdentifier = Math.random().toString(36).substring(2, 8);
+      
+      console.log(`Generating API from provided schema for user: ${XAuthUserId} with identifier: ${apiIdentifier}`);
       
       // Ensure we have a deep clone of the tables
       const safeTableSchemas = JSON.parse(JSON.stringify(tables));
+      
+      // Update all tables with proper prefixing including the API identifier
+      safeTableSchemas.forEach(table => {
+        // Store the original name for reference
+        table.originalName = table.name;
+        // Set the prefixed name that will be used in the database with API identifier
+        table.prefixedName = `${XAuthUserId}_${apiIdentifier}_${table.name}`;
+        
+        // For relationships, ensure they point to prefixed tables
+        if (table.relationships && Array.isArray(table.relationships)) {
+          table.relationships.forEach(rel => {
+            // Store original target table
+            rel.originalTargetTable = rel.targetTable;
+            // Update target table to use the prefixed name with API identifier
+            rel.targetTable = `${XAuthUserId}_${apiIdentifier}_${rel.targetTable}`;
+          });
+        }
+      });
       
       // First, create the tables in Supabase
       console.log('Creating tables in Supabase...');
@@ -437,19 +490,29 @@ Please modify the existing schema based on the modification request. Return the 
       };
       
       // Now create the tables in Supabase
-      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, XAuthUserId);
+      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, XAuthUserId, apiIdentifier);
       console.log(`Created ${createdTables.length} tables in Supabase`);
+      
+      // Log all table names for debugging
+      console.log('Tables created with prefix:');
+      createdTables.forEach(table => {
+        console.log(`- ${table.prefixedName}`);
+      });
       
       // Create API endpoints with isolated schemas
       console.log('Creating API endpoints...');
-      const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId);
+      const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId, apiIdentifier);
+      
+      // Verify the API identifier is being used consistently
+      console.log(`API router created with identifier: ${router.apiIdentifier}`);
       
       // Generate SQL for the tables
-      const sql = this.generateSQL(safeTableSchemas, XAuthUserId);
+      const sql = this.generateSQL(safeTableSchemas, XAuthUserId, apiIdentifier);
       
       // Create metadata with all necessary information
       const safeMetadata = {
         XAuthUserId,
+        apiIdentifier,
         tables: safeTableSchemas,
         createdAt: new Date().toISOString(),
         sql: sql, // Include the SQL in the metadata

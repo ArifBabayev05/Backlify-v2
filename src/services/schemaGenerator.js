@@ -9,12 +9,15 @@ class SchemaGenerator {
     this.schemas = new Map();
   }
 
-  async generateSchemas(analysisResult, XAuthUserId = 'default') {
+  async generateSchemas(analysisResult, XAuthUserId = 'default', apiIdentifier = null) {
     const createdTables = [];
     
     try {
       // First, make sure we have the execute_sql function
       await this._ensureSqlFunction();
+      
+      // Generate a unique API identifier if not provided
+      const effectiveApiId = apiIdentifier || Math.random().toString(36).substring(2, 8);
       
       // Make a deep copy of the tables to avoid modifying the original
       const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
@@ -24,105 +27,329 @@ class SchemaGenerator {
       // First pass: Create all tables with all columns including FK columns
       console.log("First pass: Creating all tables...");
       for (const table of tablesData) {
-        // Add XAuthUserId prefix to table name
-        const prefixedTableName = `${XAuthUserId}_${table.name}`;
+        // Add XAuthUserId AND API identifier prefix to table name
+        const prefixedTableName = `${XAuthUserId}_${effectiveApiId}_${table.name}`;
         const originalName = table.name;
         table.name = prefixedTableName;
         
         // Store schema in memory with XAuthUserId prefix
         this.schemas.set(prefixedTableName, table);
         
-        // Create table in Supabase in public schema with XAuthUserId prefix
+        // Create table in Supabase in public schema with XAuthUserId and API identifier prefix
         const createResult = await this._createTable(table, XAuthUserId);
         if (createResult.success) {
           console.log(`Table ${prefixedTableName} created successfully`);
           createdTables.push({ 
             originalName: originalName,
-            prefixedName: prefixedTableName 
+            prefixedName: prefixedTableName,
+            name: originalName,
+            columns: table.columns,
+            relationships: table.relationships || []
           });
         } else {
           console.error(`Failed to create table ${prefixedTableName}:`, createResult.message);
           // Still add to list for API generation
           createdTables.push({ 
             originalName: originalName,
-            prefixedName: prefixedTableName 
+            prefixedName: prefixedTableName,
+            name: originalName,
+            columns: table.columns,
+            relationships: table.relationships || []
           });
         }
       }
-
-      // Second pass: Add relationships after all tables exist
+      
+      // Second pass: Add relationships between tables
       console.log("Second pass: Adding relationships...");
       for (const table of tablesData) {
-        if (table.relationships && table.relationships.length > 0) {
-          for (const rel of table.relationships) {
-            // Update relationship to use prefixed table names
-            const result = await this._createRelationship(
-              table.name,  // Already prefixed
-              `${XAuthUserId}_${rel.targetTable}`,
-              rel.type,
-              rel.sourceColumn,
-              rel.targetColumn || 'id',  // Default to id if not specified
-              XAuthUserId
+        // Skip if no relationships
+        if (!table.relationships || !Array.isArray(table.relationships) || table.relationships.length === 0) {
+          continue;
+        }
+        
+        const sourceTable = table.name; // Already prefixed
+        
+        for (const rel of table.relationships) {
+          // Skip invalid relationships
+          if (!rel.targetTable || !rel.sourceColumn || !rel.targetColumn) {
+            console.warn('Skipping invalid relationship:', rel);
+            continue;
+          }
+          
+          // Ensure target table has XAuthUserId AND API identifier prefix
+          const targetTable = rel.targetTable.includes(`${XAuthUserId}_${effectiveApiId}_`) 
+            ? rel.targetTable 
+            : `${XAuthUserId}_${effectiveApiId}_${rel.targetTable}`;
+          
+          // Create the relationship
+          try {
+            await this._createRelationship(
+              sourceTable, 
+              targetTable, 
+              rel.type || 'one-to-many', 
+              rel.sourceColumn, 
+              rel.targetColumn
             );
-            
-            console.log(`Relationship result: ${JSON.stringify(result)}`);
+            console.log(`Created relationship from ${sourceTable}.${rel.sourceColumn} to ${targetTable}.${rel.targetColumn}`);
+          } catch (error) {
+            console.error(`Failed to create relationship:`, error);
           }
         }
       }
-
-      // Third pass: Add sample data
-      console.log("Third pass: Adding sample data...");
-      for (const table of tablesData) {
-        await this._addSampleData(table, XAuthUserId);
+      
+      // Third pass (optional): Add sample data if requested
+      if (analysisResult.addSampleData) {
+        console.log("Third pass: Adding sample data...");
+        for (const table of tablesData) {
+          await this._addSampleData(table, XAuthUserId);
+        }
       }
-
+      
       return createdTables;
     } catch (error) {
-      console.error("Schema generation error:", error);
-      throw new Error(`Schema generation failed: ${error.message}`);
+      console.error("Error generating schemas:", error);
+      throw error;
     }
   }
 
   async _ensureSqlFunction() {
-    // Check if execute_sql function exists by trying to call it
-    const testResult = await this.supabase.rpc('execute_sql', {
-      sql: 'SELECT 1 as test'
-    });
-
-    if (testResult.error && testResult.error.message.includes('function "execute_sql" does not exist')) {
-      console.log('execute_sql function does not exist, creating it...');
-      
-      // Create the function through the REST API
-      // Note: This probably won't work but we try anyway
-      const { error } = await this.supabase.from('_rpc').select('*').eq('name', 'execute_sql_function_setup').execute();
+    console.log('Checking if execute_sql function exists in Supabase...');
+    
+    try {
+      // First try to call the function with a simple query to test if it exists
+      const { data, error } = await this.supabase.rpc('execute_sql', {
+        sql_query: 'SELECT 1 as test;'
+      });
       
       if (error) {
-        console.error('Could not create execute_sql function:', error.message);
-        console.error('Please create this function in your Supabase project using the SQL editor:');
-        console.error(`
--- Create a function to execute SQL commands
-CREATE OR REPLACE FUNCTION execute_sql(sql text)
-RETURNS void AS $$
-BEGIN
-  EXECUTE sql;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Grant execute permission to the authenticated and service roles
-GRANT EXECUTE ON FUNCTION execute_sql TO authenticated;
-GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
-        `);
+        // If function doesn't exist, try to create it
+        if (error.code === 'PGRST116' || error.message.includes('does not exist')) {
+          console.log('execute_sql function not found. Attempting to create it...');
+          await this._createSqlFunction();
+          return true;
+        } else {
+          // Some other error (permissions, etc)
+          console.error('Error accessing execute_sql function:', error);
+          
+          // Display specific advice for typical errors
+          if (error.message.includes('permission denied')) {
+            console.error('PERMISSIONS ERROR: Your Supabase service role key does not have permission to call the execute_sql function.');
+            console.error('You may need to:');
+            console.error('1. Create the execute_sql function with proper permissions');
+            console.error('2. Use a service role key with more privileges');
+          }
+          
+          throw new Error(`Unable to access execute_sql function: ${error.message}`);
+        }
       }
+      
+      // Function exists and is working
+      console.log('execute_sql function exists and is working properly');
+      return true;
+    } catch (error) {
+      console.error('Error checking for execute_sql function:', error.message);
+      
+      // More detailed diagnostics
+      console.error('IMPORTANT: The execute_sql function may not exist or you may not have permissions to use it.');
+      console.error('This function is essential for creating tables in Supabase.');
+      console.error('Please check your Supabase database settings and ensure:');
+      console.error('1. The execute_sql function exists');
+      console.error('2. Your service role key has permission to use it');
+      console.error('3. Your Supabase project allows SQL execution through RPC');
+      
+      throw error;
+    }
+  }
+  
+  async _createSqlFunction() {
+    console.log('Creating execute_sql function in Supabase...');
+    
+    // SQL function definition
+    const createFunctionSQL = `
+      CREATE OR REPLACE FUNCTION execute_sql(sql_query text)
+      RETURNS json
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      DECLARE
+        result json;
+      BEGIN
+        EXECUTE sql_query;
+        result := json_build_object('success', true);
+        RETURN result;
+      EXCEPTION WHEN OTHERS THEN
+        result := json_build_object(
+          'success', false,
+          'error', SQLERRM,
+          'detail', SQLSTATE
+        );
+        RETURN result;
+      END;
+      $$;
+      
+      -- Grant usage permissions
+      GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
+      GRANT EXECUTE ON FUNCTION execute_sql TO authenticated;
+      GRANT EXECUTE ON FUNCTION execute_sql TO anon;
+    `;
+    
+    try {
+      // Try to create the function directly using Supabase SQL
+      // Note: This may fail if the user doesn't have permissions
+      const { data, error } = await this.supabase.rpc('execute_sql', {
+        sql_query: createFunctionSQL
+      });
+      
+      if (error) {
+        console.error('Error creating execute_sql function:', error);
+        console.error('');
+        console.error('YOU NEED TO CREATE THIS FUNCTION MANUALLY IN SUPABASE SQL EDITOR:');
+        console.error(createFunctionSQL);
+        console.error('');
+        console.error('After creating the function, restart the server.');
+        
+        throw new Error(`Failed to create execute_sql function: ${error.message}`);
+      }
+      
+      console.log('execute_sql function created successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to create execute_sql function:', error.message);
+      
+      // More friendly guidance
+      console.error('');
+      console.error('MANUAL ACTION REQUIRED:');
+      console.error('Please run the following SQL in your Supabase SQL Editor:');
+      console.error(createFunctionSQL);
+      console.error('');
+      console.error('After creating the function, restart the server.');
+      
+      throw error;
     }
   }
 
+  async _addXAuthUserIdColumnIfNeeded(table) {
+    // Check if XAuthUserId column exists
+    const hasXAuthUserIdColumn = table.columns.some(col => col.name === 'XAuthUserId');
+
+    if (!hasXAuthUserIdColumn) {
+      console.log(`Adding XAuthUserId column to table ${table.name}`);
+      
+      // Add XAuthUserId column with appropriate definition
+      const xAuthUserIdColumn = {
+        name: 'XAuthUserId',
+        type: 'varchar(255)',
+        constraints: '' // No specific constraints needed
+      };
+      
+      // Add to columns array
+      table.columns.push(xAuthUserIdColumn);
+    }
+    
+    return table;
+  }
+
   async _createTable(tableSchema, XAuthUserId) {
-    const { name } = tableSchema;
-    
-    // Convert our schema to SQL
-    const createTableSQL = this._generateCreateTableSQL(name, tableSchema.columns);
-    
-    return await this._executeSql(createTableSQL, `Creating table ${name}`);
+    try {
+      // Add XAuthUserId column if needed
+      tableSchema = await this._addXAuthUserIdColumnIfNeeded(tableSchema);
+      
+      const { name, columns = [] } = tableSchema;
+      
+      console.log(`Attempting to create table ${name} in Supabase...`);
+      
+      // Generate SQL for table creation
+      let sql = `
+        -- Create table with UUID extension
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        
+        -- Drop existing table if it exists
+        DROP TABLE IF EXISTS "${name}" CASCADE;
+        
+        -- Create the new table
+        CREATE TABLE "${name}" (
+      `;
+      
+      // Add column definitions
+      const columnDefinitions = [];
+      for (const col of columns) {
+        let colDef = `"${col.name}" ${col.type}`;
+        
+        // Add constraints if present
+        if (col.constraints) {
+          const constraints = Array.isArray(col.constraints) 
+            ? col.constraints.join(' ') 
+            : col.constraints;
+          colDef += ` ${constraints}`;
+        }
+        
+        columnDefinitions.push(colDef);
+      }
+      
+      // Add timestamps if not already present
+      if (!columns.find(col => col.name === 'created_at')) {
+        columnDefinitions.push('"created_at" timestamp with time zone DEFAULT now()');
+      }
+      if (!columns.find(col => col.name === 'updated_at')) {
+        columnDefinitions.push('"updated_at" timestamp with time zone DEFAULT now()');
+      }
+      
+      sql += columnDefinitions.join(',\n          ');
+      sql += `
+        );
+        
+        -- Create updated_at trigger
+        CREATE OR REPLACE FUNCTION "update_${name}_updated_at"() 
+        RETURNS TRIGGER AS $$
+        BEGIN
+          NEW.updated_at = now();
+          RETURN NEW;
+        END;
+        $$ LANGUAGE 'plpgsql';
+        
+        DROP TRIGGER IF EXISTS "set_${name}_updated_at" ON "${name}";
+        
+        CREATE TRIGGER "set_${name}_updated_at"
+        BEFORE UPDATE ON "${name}"
+        FOR EACH ROW
+        EXECUTE FUNCTION "update_${name}_updated_at"();
+      `;
+      
+      console.log(`Generated SQL for table ${name}:`);
+      console.log(sql);
+      
+      // Execute the SQL using Supabase Edge Function or direct database access
+      console.log('Executing SQL to create table...');
+      const { data, error } = await this.supabase.rpc('execute_sql', { sql_query: sql });
+      
+      if (error) {
+        console.error(`Error executing SQL for table ${name}:`, error);
+        return { success: false, message: error.message };
+      }
+      
+      console.log(`Table ${name} creation response:`, data);
+      
+      // Double-check if the table exists
+      try {
+        const { count, error: verifyError } = await this.supabase
+          .from(name)
+          .select('*', { count: 'exact', head: true });
+          
+        if (verifyError) {
+          console.error(`Table ${name} verification failed:`, verifyError);
+          return { success: false, message: `Table verification failed: ${verifyError.message}` };
+        } else {
+          console.log(`✅ Table ${name} verified successfully`);
+          return { success: true };
+        }
+      } catch (verifyError) {
+        console.error(`Error verifying table ${name}:`, verifyError);
+        return { success: false, message: `Table verification error: ${verifyError.message}` };
+      }
+    } catch (error) {
+      console.error(`Unexpected error creating table ${tableSchema.name}:`, error);
+      return { success: false, message: error.message };
+    }
   }
 
   async _createRelationship(sourceTable, targetTable, type, sourceColumn, targetColumn) {
@@ -438,34 +665,40 @@ $$;
   }
 
   // New method: Generate schemas without creating tables in Supabase
-  async generateSchemasWithoutCreating(analysisResult, XAuthUserId = 'default') {
+  async generateSchemasWithoutCreating(analysisResult, XAuthUserId = 'default', apiIdentifier = null) {
     try {
+      // Generate a unique API identifier if not provided
+      const effectiveApiId = apiIdentifier || Math.random().toString(36).substring(2, 8);
+      
       // Make a deep copy of the tables to avoid modifying the original
       const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
       
-      console.log("Original tables structure:", JSON.stringify(tablesData, null, 2));
-      
-      // Process tables but don't create them in Supabase
-      const processedTables = tablesData.map(table => {
-        // Preserve original table name
-        const originalName = table.name;
-        // Add XAuthUserId prefix to table name (for when it will be created later)
-        const prefixedTableName = `${XAuthUserId}_${table.name}`;
+      // Process tables for API generation without creating them in the database
+      const processedTables = await Promise.all(tablesData.map(async table => {
+        // Add XAuthUserId column if needed
+        table = await this._addXAuthUserIdColumnIfNeeded(table);
         
-        // Return the complete table structure with both original and prefixed names
+        // Add XAuthUserId AND API identifier prefix to table name for reference
+        const prefixedTableName = `${XAuthUserId}_${effectiveApiId}_${table.name}`;
+        
+        // Return table with original name and prefixed name
         return {
-          ...table,
-          originalName: originalName,
-          name: originalName,  // Keep the original name for the schema
-          prefixedName: prefixedTableName  // Store the prefixed name for later use
+          name: table.name,
+          originalName: table.name,
+          prefixedName: prefixedTableName,
+          columns: table.columns,
+          relationships: (table.relationships || []).map(rel => ({
+            ...rel,
+            // Update target table reference for consistency
+            targetTable: rel.targetTable
+          }))
         };
-      });
+      }));
       
-      console.log(`Processed ${processedTables.length} tables without creating them in Supabase`);
       return processedTables;
     } catch (error) {
-      console.error("Schema processing error:", error);
-      throw new Error(`Schema processing failed: ${error.message}`);
+      console.error("Error processing schemas without creating:", error);
+      throw error;
     }
   }
 }

@@ -21,6 +21,71 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+// Verify database connectivity at startup
+async function checkDatabase() {
+  console.log('Verifying database connection...');
+  try {
+    // Check Supabase connectivity
+    const { data, error } = await supabase.from('api_registry').select('count(*)', { count: 'exact', head: true });
+    
+    if (error) {
+      console.error('❌ Database connectivity error:', error);
+      console.error('Please check your Supabase URL and service role key in .env file');
+    } else {
+      console.log('✅ Connected to Supabase successfully');
+    }
+    
+    // Additional verification for SQL execution
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+      const { data, error } = await client.rpc('execute_sql', { sql_query: 'SELECT 1 as test;' });
+      
+      if (error) {
+        console.error('❌ execute_sql function test failed:', error);
+        console.error('Please ensure the execute_sql function exists in your Supabase database');
+        console.error('Run this SQL in the Supabase SQL Editor:');
+        console.error(`
+          CREATE OR REPLACE FUNCTION execute_sql(sql_query text)
+          RETURNS json
+          LANGUAGE plpgsql
+          SECURITY DEFINER
+          AS $$
+          DECLARE
+            result json;
+          BEGIN
+            EXECUTE sql_query;
+            result := json_build_object('success', true);
+            RETURN result;
+          EXCEPTION WHEN OTHERS THEN
+            result := json_build_object(
+              'success', false,
+              'error', SQLERRM,
+              'detail', SQLSTATE
+            );
+            RETURN result;
+          END;
+          $$;
+          
+          -- Grant usage permissions
+          GRANT EXECUTE ON FUNCTION execute_sql TO service_role;
+          GRANT EXECUTE ON FUNCTION execute_sql TO authenticated;
+          GRANT EXECUTE ON FUNCTION execute_sql TO anon;
+        `);
+      } else {
+        console.log('✅ execute_sql function working properly');
+      }
+    } catch (err) {
+      console.error('❌ Error testing execute_sql function:', err);
+    }
+  } catch (err) {
+    console.error('❌ Critical database connection error:', err);
+  }
+}
+
+// Run the database check
+checkDatabase();
+
 // Middleware
 // Replace simple CORS setup with a more comprehensive configuration
 const corsOptions = {
@@ -843,6 +908,330 @@ app.use('/', schemaRoutes);
     console.error('Error loading APIs:', error);
   }
 })();
+
+// Add a verification endpoint to check table existence
+app.get('/api/:apiId/verify-tables', async (req, res) => {
+  const apiId = req.params.apiId;
+  const router = apiPublisher.getRouter(apiId);
+  
+  if (!router) {
+    setCorsHeaders(res);
+    return res.status(404).json({ error: 'API not found' });
+  }
+  
+  setCorsHeaders(res);
+  
+  try {
+    // Get metadata for this API
+    const metadata = apiPublisher.apiMetadata.get(apiId);
+    const XAuthUserId = router.XAuthUserId;
+    const apiIdentifier = router.apiIdentifier;
+    
+    console.log(`Verifying tables for API ${apiId} with XAuthUserId: ${XAuthUserId} and apiIdentifier: ${apiIdentifier}`);
+    
+    // Verify each table exists
+    const tableResults = [];
+    const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    // Get tables from router
+    const tables = router._tableSchemas || [];
+    
+    // Create a list of table names to check
+    const tableNames = tables.map(table => {
+      return {
+        originalName: table.originalName || table.name,
+        prefixedName: table.prefixedName || `${XAuthUserId}_${apiIdentifier}_${table.originalName || table.name}`
+      };
+    });
+    
+    console.log(`Checking ${tableNames.length} tables for existence...`);
+    
+    // Check each table
+    for (const table of tableNames) {
+      try {
+        const { error } = await client
+          .from(table.prefixedName)
+          .select('*', { count: 'exact', head: true });
+          
+        tableResults.push({
+          table: table.originalName,
+          prefixedName: table.prefixedName,
+          exists: !error,
+          error: error ? error.message : null
+        });
+      } catch (err) {
+        tableResults.push({
+          table: table.originalName,
+          prefixedName: table.prefixedName,
+          exists: false,
+          error: err.message
+        });
+      }
+    }
+    
+    // Check if any tables need to be fixed
+    const nonExistentTables = tableResults.filter(result => !result.exists);
+    
+    // Return verification results
+    res.json({
+      apiId,
+      XAuthUserId,
+      apiIdentifier,
+      tablesVerified: tableResults.length,
+      existingTables: tableResults.filter(result => result.exists).length,
+      missingTables: nonExistentTables.length,
+      details: tableResults,
+      needsFix: nonExistentTables.length > 0
+    });
+  } catch (error) {
+    console.error('Error verifying tables:', error);
+    res.status(500).json({
+      error: 'Failed to verify tables',
+      message: error.message
+    });
+  }
+});
+
+// Add an endpoint to recreate tables with correct identifiers
+app.post('/api/:apiId/fix-tables', async (req, res) => {
+  const apiId = req.params.apiId;
+  const { forceRecreate = false } = req.body;
+  const router = apiPublisher.getRouter(apiId);
+  
+  if (!router) {
+    setCorsHeaders(res);
+    return res.status(404).json({ error: 'API not found' });
+  }
+  
+  setCorsHeaders(res);
+  
+  try {
+    // Get metadata for this API
+    const metadata = apiPublisher.apiMetadata.get(apiId);
+    const XAuthUserId = router.XAuthUserId;
+    const apiIdentifier = router.apiIdentifier;
+    
+    console.log(`Attempting to fix tables for API ${apiId} with XAuthUserId: ${XAuthUserId} and apiIdentifier: ${apiIdentifier}`);
+    
+    // Get tables from metadata or router
+    const tables = metadata.tables || router._tableSchemas || [];
+    if (!tables || tables.length === 0) {
+      return res.status(400).json({
+        error: 'No table definitions found for this API'
+      });
+    }
+    
+    // Prepare the tables with correct prefixes
+    const fixedTables = tables.map(table => {
+      // Create a safe copy
+      const newTable = { ...table };
+      
+      // Set the original name correctly
+      newTable.originalName = table.originalName || table.name.split('_').pop();
+      
+      // Ensure the name is clean (without any prefixes)
+      newTable.name = newTable.originalName;
+      
+      // Set the prefixed name using the current API identifier
+      newTable.prefixedName = `${XAuthUserId}_${apiIdentifier}_${newTable.originalName}`;
+      
+      // Fix relationships if they exist
+      if (newTable.relationships && Array.isArray(newTable.relationships)) {
+        newTable.relationships = newTable.relationships.map(rel => {
+          // Create a safe copy
+          const newRel = { ...rel };
+          
+          // Extract the target table without prefixes if needed
+          let targetTableName = rel.targetTable;
+          if (targetTableName.includes('_')) {
+            targetTableName = targetTableName.split('_').pop();
+          }
+          
+          // Update to use the current API identifier
+          newRel.targetTable = `${XAuthUserId}_${apiIdentifier}_${targetTableName}`;
+          
+          return newRel;
+        });
+      }
+      
+      return newTable;
+    });
+    
+    // Create the SQL script to fix the tables
+    const analysisResult = {
+      tables: fixedTables.map(table => ({
+        ...table,
+        name: table.originalName // Use original name for schema generator
+      }))
+    };
+    
+    console.log('Recreating tables with correct prefixes...');
+    
+    // Only create the tables if forceRecreate is true
+    let tableCreationResult = { success: false, message: 'Table recreation skipped' };
+    
+    if (forceRecreate) {
+      // Use the schema generator to create the tables with the correct API identifier
+      try {
+        await schemaGenerator.generateSchemas(analysisResult, XAuthUserId, apiIdentifier);
+        tableCreationResult = { success: true, message: 'Tables recreated successfully' };
+      } catch (err) {
+        tableCreationResult = { success: false, message: `Error recreating tables: ${err.message}` };
+      }
+    } else {
+      console.log('Skipping table recreation - set forceRecreate=true to recreate tables');
+    }
+    
+    // Update the metadata with the fixed tables
+    const updatedMetadata = {
+      ...metadata,
+      tables: fixedTables,
+      apiIdentifier: apiIdentifier
+    };
+    
+    // Update stored metadata
+    apiPublisher.apiMetadata.set(apiId, updatedMetadata);
+    
+    // Response with results
+    res.json({
+      success: true,
+      apiId,
+      XAuthUserId,
+      apiIdentifier,
+      tablesFixed: fixedTables.length,
+      tableCreation: tableCreationResult,
+      message: forceRecreate 
+        ? 'Table prefixes fixed and tables recreated' 
+        : 'Table prefixes fixed in metadata, use forceRecreate=true to recreate the actual tables'
+    });
+  } catch (error) {
+    console.error('Error fixing tables:', error);
+    res.status(500).json({
+      error: 'Failed to fix tables',
+      message: error.message
+    });
+  }
+});
+
+// Add an endpoint to fix XAuthUserId column in tables
+app.post('/api/:apiId/fix-xauthuserid', async (req, res) => {
+  const apiId = req.params.apiId;
+  const router = apiPublisher.getRouter(apiId);
+  
+  if (!router) {
+    setCorsHeaders(res);
+    return res.status(404).json({ error: 'API not found' });
+  }
+  
+  setCorsHeaders(res);
+  
+  try {
+    // Get metadata for this API
+    const metadata = apiPublisher.apiMetadata.get(apiId);
+    const XAuthUserId = router.XAuthUserId;
+    const apiIdentifier = router.apiIdentifier;
+    
+    console.log(`Fixing XAuthUserId column for API ${apiId} with XAuthUserId: ${XAuthUserId} and apiIdentifier: ${apiIdentifier}`);
+    
+    // Get tables from metadata or router
+    const tables = metadata.tables || router._tableSchemas || [];
+    if (!tables || tables.length === 0) {
+      return res.status(400).json({
+        error: 'No table definitions found for this API'
+      });
+    }
+    
+    // Create a client for running SQL
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    // For each table, check if XAuthUserId column exists and add it if missing
+    const results = [];
+    for (const table of tables) {
+      const prefixedTableName = table.prefixedName;
+      if (!prefixedTableName) continue;
+      
+      try {
+        // Check if column exists
+        const { data, error } = await supabase.rpc('execute_sql', { 
+          sql_query: `
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '${prefixedTableName}'
+            AND column_name = 'XAuthUserId';
+          `
+        });
+        
+        const hasColumn = data && data.length > 0;
+        
+        if (!hasColumn) {
+          // Add column if it doesn't exist
+          console.log(`Adding XAuthUserId column to table ${prefixedTableName}`);
+          const { data: alterData, error: alterError } = await supabase.rpc('execute_sql', { 
+            sql_query: `
+              ALTER TABLE "${prefixedTableName}" 
+              ADD COLUMN "XAuthUserId" varchar(255);
+              
+              -- Update existing rows to use the API's XAuthUserId
+              UPDATE "${prefixedTableName}"
+              SET "XAuthUserId" = '${XAuthUserId}';
+            `
+          });
+          
+          if (alterError) {
+            results.push({
+              table: prefixedTableName,
+              success: false,
+              error: alterError.message
+            });
+          } else {
+            results.push({
+              table: prefixedTableName,
+              success: true,
+              message: 'XAuthUserId column added'
+            });
+            
+            // Also add to schema in memory
+            if (!table.columns.some(col => col.name === 'XAuthUserId')) {
+              table.columns.push({
+                name: 'XAuthUserId',
+                type: 'varchar(255)',
+                constraints: ''
+              });
+            }
+          }
+        } else {
+          results.push({
+            table: prefixedTableName,
+            success: true,
+            message: 'XAuthUserId column already exists'
+          });
+        }
+      } catch (e) {
+        results.push({
+          table: prefixedTableName,
+          success: false,
+          error: e.message
+        });
+      }
+    }
+    
+    // Update metadata to reflect schema changes
+    apiPublisher.apiMetadata.set(apiId, metadata);
+    
+    res.json({
+      success: true,
+      apiId,
+      XAuthUserId,
+      results
+    });
+  } catch (error) {
+    console.error('Error fixing XAuthUserId column:', error);
+    res.status(500).json({
+      error: 'Failed to fix XAuthUserId column',
+      message: error.message
+    });
+  }
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;

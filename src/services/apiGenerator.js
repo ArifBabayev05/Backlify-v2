@@ -10,12 +10,15 @@ class APIGenerator {
     this.supabase = createClient(config.supabase.url, config.supabase.key);
   }
 
-  generateEndpoints(tableSchemas, XAuthUserId = 'default') {
+  generateEndpoints(tableSchemas, XAuthUserId = 'default', existingApiIdentifier = null) {
     // Make a deep copy of the table schemas to ensure isolation
     const safeTableSchemas = JSON.parse(JSON.stringify(tableSchemas));
     
     // Create a new router instance for each API
     const router = express.Router();
+    
+    // Use the existing API identifier if provided, or generate a new one
+    const apiIdentifier = existingApiIdentifier || Math.random().toString(36).substring(2, 8);
     
     // Store XAuthUserId as a property on the router
     // Use Object.defineProperty to make it non-enumerable and prevent accidental changes
@@ -23,6 +26,13 @@ class APIGenerator {
       value: XAuthUserId,
       writable: false,  // Make it read-only
       enumerable: true  // Make it visible for debugging
+    });
+    
+    // Store API identifier as a property on the router
+    Object.defineProperty(router, 'apiIdentifier', {
+      value: apiIdentifier,
+      writable: false,
+      enumerable: true
     });
 
     // Add in-memory database to the router (ensure it's a new Map instance)
@@ -94,6 +104,7 @@ class APIGenerator {
           
         return {
           table: tableName,
+          prefixedTableName: schema.prefixedName,
           endpoints: [
             { method: 'GET', path: `/${tableName}`, description: 'Get all records with pagination and filtering' },
             { method: 'GET', path: `/${tableName}/:id`, description: 'Get record by ID' },
@@ -113,6 +124,7 @@ class APIGenerator {
           .filter(t => t && (t.originalName || t.name))
           .map(t => t.originalName || t.name),
         XAuthUserId: XAuthUserId,
+        apiIdentifier: router.apiIdentifier,
         endpoints,
         routerInstanceId: router._instanceId,
         createdAt: router._createdAt
@@ -122,13 +134,29 @@ class APIGenerator {
     // Generate endpoints for each table
     safeTableSchemas.forEach(schema => {
       const tableName = schema.originalName || schema.name;
-      const prefixedTableName = schema.prefixedName || `${XAuthUserId}_${tableName}`;
+      
+      // Use the existing prefixedName if available, otherwise generate a new one
+      let prefixedTableName;
+      if (schema.prefixedName) {
+        prefixedTableName = schema.prefixedName;
+        console.log(`Using existing prefixedName: ${prefixedTableName}`);
+      } else {
+        // Explicitly generate prefixed table name with BOTH XAuthUserId AND apiIdentifier
+        // This ensures complete isolation even between APIs from the same user
+        prefixedTableName = `${XAuthUserId}_${apiIdentifier}_${tableName}`;
+        // Store the prefixed name on the schema to ensure consistency
+        schema.prefixedName = prefixedTableName;
+        console.log(`Generated new prefixedName: ${prefixedTableName}`);
+      }
 
       // GET all items with pagination and filtering
       router.get(`/${tableName}`, async (req, res) => {
         try {
           const { page = 1, limit = 10, sort, order = 'asc', ...filters } = req.query;
           const offset = (parseInt(page) - 1) * parseInt(limit);
+          
+          // Add debug logging about the table being accessed
+          console.log(`[API ${router._instanceId}] Accessing table: ${prefixedTableName} for GET all items`);
           
           // Build the query using a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
@@ -179,6 +207,9 @@ class APIGenerator {
       // GET item by id
       router.get(`/${tableName}/:id`, async (req, res) => {
         try {
+          // Add debug logging about the table being accessed
+          console.log(`[API ${router._instanceId}] Accessing table: ${prefixedTableName} for GET by ID: ${req.params.id}`);
+          
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
@@ -210,6 +241,9 @@ class APIGenerator {
           // Clone the request body to avoid modifying the original
           const requestData = { ...req.body };
           
+          // Add debug logging about the table being accessed
+          console.log(`[API ${router._instanceId}] Accessing table: ${prefixedTableName} for POST new item`);
+          
           // Only remove ID if it's one of our placeholder values
           if (requestData.id === "uuid-generated-by-database" || 
               requestData.id === "string" || 
@@ -218,10 +252,22 @@ class APIGenerator {
             delete requestData.id;
           }
           
-          // If XAuthUserId is missing, set it to the API XAuthUserId (for backward compatibility)
-          if (requestData.XAuthUserId === undefined || requestData.XAuthUserId === null || requestData.XAuthUserId === "") {
-            console.log(`No XAuthUserId provided, setting to API XAuthUserId: ${router.XAuthUserId}`);
+          // Check if the table has an XAuthUserId column before adding it
+          const hasXAuthUserIdColumn = schema.columns && 
+            Array.isArray(schema.columns) && 
+            schema.columns.some(col => col.name === 'XAuthUserId');
+          
+          // Only add XAuthUserId if the column exists in the table
+          if (hasXAuthUserIdColumn) {
+            // Use this API instance's XAuthUserId
             requestData.XAuthUserId = router.XAuthUserId;
+            console.log(`Adding XAuthUserId: ${router.XAuthUserId} to request`);
+          } else {
+            // Remove XAuthUserId if it was included but doesn't exist in the table
+            if (requestData.XAuthUserId !== undefined) {
+              console.log(`Removing XAuthUserId as the column doesn't exist in table ${prefixedTableName}`);
+              delete requestData.XAuthUserId;
+            }
           }
           
           // Add proper timestamps if not provided or if they're placeholder values
@@ -289,6 +335,9 @@ class APIGenerator {
       // PUT/UPDATE item
       router.put(`/${tableName}/:id`, async (req, res) => {
         try {
+          // Add debug logging about the table being accessed
+          console.log(`[API ${router._instanceId}] Accessing table: ${prefixedTableName} for PUT update to ID: ${req.params.id}`);
+          
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
@@ -306,14 +355,21 @@ class APIGenerator {
           // Clone the request body to avoid modifying it
           const updateData = { ...req.body };
           
-          // Don't allow removing the XAuthUserId 
-          if (updateData.XAuthUserId === undefined || updateData.XAuthUserId === null || updateData.XAuthUserId === "") {
-            // Use the existing XAuthUserId from the record
-            if (checkData.XAuthUserId) {
-              updateData.XAuthUserId = checkData.XAuthUserId;
-            } else {
-              // If somehow the existing record has no XAuthUserId, use the API XAuthUserId
-              updateData.XAuthUserId = router.XAuthUserId;
+          // Check if the table has an XAuthUserId column before adding it
+          const hasXAuthUserIdColumn = schema.columns && 
+            Array.isArray(schema.columns) && 
+            schema.columns.some(col => col.name === 'XAuthUserId');
+          
+          // Only add XAuthUserId if the column exists in the table
+          if (hasXAuthUserIdColumn) {
+            // Use this API instance's XAuthUserId
+            updateData.XAuthUserId = router.XAuthUserId;
+            console.log(`Adding XAuthUserId: ${router.XAuthUserId} to update data`);
+          } else {
+            // Remove XAuthUserId if it was included but doesn't exist in the table
+            if (updateData.XAuthUserId !== undefined) {
+              console.log(`Removing XAuthUserId as the column doesn't exist in table ${prefixedTableName}`);
+              delete updateData.XAuthUserId;
             }
           }
           
@@ -339,6 +395,9 @@ class APIGenerator {
       // DELETE item
       router.delete(`/${tableName}/:id`, async (req, res) => {
         try {
+          // Add debug logging about the table being accessed
+          console.log(`[API ${router._instanceId}] Accessing table: ${prefixedTableName} for DELETE ID: ${req.params.id}`);
+          
           // Use a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
           
@@ -433,6 +492,9 @@ class APIGenerator {
       // Call the generator method with the isolated context
       return _generateSwaggerSpec(safeTableSchemas, effectiveXAuthUserId);
     };
+
+    // Add a log statement to summarize all tables created for this API instance
+    console.log(`[API ${router._instanceId}] Created for XAuthUserId: ${XAuthUserId} with apiIdentifier: ${apiIdentifier} and tables: ${safeTableSchemas.map(t => t.prefixedName).join(', ')}`);
 
     return router;
   }
@@ -739,6 +801,7 @@ const apiGenerator = new APIGenerator();
 
 // Export the class methods and standalone functions
 module.exports = {
-  generateEndpoints: (tableSchemas, XAuthUserId) => apiGenerator.generateEndpoints(tableSchemas, XAuthUserId),
+  generateEndpoints: (tableSchemas, XAuthUserId, existingApiIdentifier) => 
+    apiGenerator.generateEndpoints(tableSchemas, XAuthUserId, existingApiIdentifier),
   _generateSwaggerSpec
 }; 

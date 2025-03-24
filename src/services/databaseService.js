@@ -81,6 +81,9 @@ class DatabaseService {
     const { name, columns, relationships = [] } = tableDefinition;
     
     try {
+      // Log table name for debugging
+      console.log(`Creating table ${name} - this should include XAuthUserId and apiIdentifier prefixes`);
+      
       // Generate SQL for table creation
       const sql = this.generateTableSQL(tableDefinition);
       
