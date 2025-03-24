@@ -270,17 +270,80 @@ class SchemaGenerator {
         CREATE TABLE "${name}" (
       `;
       
+      // Track foreign keys for separate handling
+      const foreignKeys = [];
+      
       // Add column definitions
       const columnDefinitions = [];
       for (const col of columns) {
         let colDef = `"${col.name}" ${col.type}`;
         
-        // Add constraints if present
+        // Handle constraints properly
         if (col.constraints) {
-          const constraints = Array.isArray(col.constraints) 
-            ? col.constraints.join(' ') 
-            : col.constraints;
-          colDef += ` ${constraints}`;
+          let constraintText = '';
+          
+          if (Array.isArray(col.constraints)) {
+            // Process each constraint individually
+            col.constraints.forEach(constraint => {
+              if (typeof constraint === 'string') {
+                // Fix default value syntax - change "default: X" to "DEFAULT X"
+                if (constraint.toLowerCase().includes('default:')) {
+                  const defaultValue = constraint.split(':')[1].trim();
+                  // Replace CURRENT_TIMESTAMP with now()
+                  const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
+                  constraintText += ` DEFAULT ${pgValue}`;
+                } 
+                // Extract foreign key constraints for later processing
+                else if (constraint.toLowerCase().includes('foreign key')) {
+                  const fkMatch = constraint.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
+                  if (fkMatch) {
+                    const targetTable = fkMatch[1];
+                    const targetColumn = fkMatch[3] || 'id';
+                    foreignKeys.push({
+                      sourceColumn: col.name,
+                      targetTable: targetTable,
+                      targetColumn: targetColumn
+                    });
+                  }
+                }
+                // Handle normal constraints
+                else {
+                  constraintText += ` ${constraint}`;
+                }
+              }
+            });
+          } 
+          // Handle string constraints
+          else if (typeof col.constraints === 'string') {
+            const constraintStr = col.constraints;
+            
+            // Fix default value syntax
+            if (constraintStr.toLowerCase().includes('default:')) {
+              const defaultValue = constraintStr.split(':')[1].trim();
+              // Replace CURRENT_TIMESTAMP with now()
+              const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
+              constraintText += ` DEFAULT ${pgValue}`;
+            }
+            // Extract foreign key constraints for later processing
+            else if (constraintStr.toLowerCase().includes('foreign key')) {
+              const fkMatch = constraintStr.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
+              if (fkMatch) {
+                const targetTable = fkMatch[1];
+                const targetColumn = fkMatch[3] || 'id';
+                foreignKeys.push({
+                  sourceColumn: col.name,
+                  targetTable: targetTable,
+                  targetColumn: targetColumn
+                });
+              }
+            }
+            // Add other constraints
+            else {
+              constraintText += ` ${constraintStr}`;
+            }
+          }
+          
+          colDef += constraintText;
         }
         
         columnDefinitions.push(colDef);
@@ -294,7 +357,33 @@ class SchemaGenerator {
         columnDefinitions.push('"updated_at" timestamp with time zone DEFAULT now()');
       }
       
-      sql += columnDefinitions.join(',\n          ');
+      // Add XAuthUserId column if not present
+      if (!columns.find(col => col.name === 'XAuthUserId')) {
+        columnDefinitions.push('"XAuthUserId" varchar(255) NOT NULL');
+      }
+      
+      // Add foreign key constraints if any
+      const fkConstraints = foreignKeys.map(fk => {
+        // Extract table prefix from fullTableName
+        const tableNameParts = name.split('_');
+        const prefix = tableNameParts.slice(0, 2).join('_') + '_';
+        
+        // Make sure target table has proper prefix
+        let targetTable = fk.targetTable;
+        if (!targetTable.includes(prefix)) {
+          targetTable = prefix + targetTable;
+        }
+        
+        return `CONSTRAINT "fk_${fk.sourceColumn}_${targetTable}" FOREIGN KEY ("${fk.sourceColumn}") REFERENCES "${targetTable}" ("${fk.targetColumn}") ON DELETE CASCADE`;
+      });
+      
+      // Combine column definitions and foreign key constraints
+      const allDefinitions = [...columnDefinitions];
+      if (fkConstraints.length > 0) {
+        allDefinitions.push(...fkConstraints);
+      }
+      
+      sql += allDefinitions.join(',\n          ');
       sql += `
         );
         
@@ -437,6 +526,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     // Drop the table if it exists
     sql += `DROP TABLE IF EXISTS "${fullTableName}" CASCADE;\n\n`;
     
+    // Track foreign keys for separate handling
+    const foreignKeys = [];
+    
     // Generate column definitions
     const columnDefinitions = columns.map(column => {
       // Clean up the column data to avoid SQL syntax errors
@@ -460,8 +552,21 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
                 const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
                 constraintText += ` DEFAULT ${pgValue}`;
               } 
-              // Handle normal constraints but preserve foreign key information for later
-              else if (!constraint.toLowerCase().includes('foreign key')) {
+              // Extract foreign key constraints for later processing
+              else if (constraint.toLowerCase().includes('foreign key')) {
+                const fkMatch = constraint.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
+                if (fkMatch) {
+                  const targetTable = fkMatch[1];
+                  const targetColumn = fkMatch[3] || 'id';
+                  foreignKeys.push({
+                    sourceColumn: column.name,
+                    targetTable: targetTable,
+                    targetColumn: targetColumn
+                  });
+                }
+              }
+              // Handle normal constraints
+              else {
                 constraintText += ` ${constraint}`;
               }
             }
@@ -478,8 +583,21 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
             const pgValue = defaultValue === 'CURRENT_TIMESTAMP' ? 'now()' : defaultValue;
             constraintText += ` DEFAULT ${pgValue}`;
           }
-          // Skip foreign keys but add other constraints
-          else if (!constraintStr.toLowerCase().includes('foreign key')) {
+          // Extract foreign key constraints for later processing
+          else if (constraintStr.toLowerCase().includes('foreign key')) {
+            const fkMatch = constraintStr.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
+            if (fkMatch) {
+              const targetTable = fkMatch[1];
+              const targetColumn = fkMatch[3] || 'id';
+              foreignKeys.push({
+                sourceColumn: column.name,
+                targetTable: targetTable,
+                targetColumn: targetColumn
+              });
+            }
+          }
+          // Add other constraints
+          else {
             constraintText += ` ${constraintStr}`;
           }
         }
@@ -503,8 +621,29 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
       columnDefinitions.push('"XAuthUserId" varchar(255) NOT NULL');
     }
     
+    // Add foreign key constraints if any
+    const fkConstraints = foreignKeys.map(fk => {
+      // Extract table prefix from fullTableName
+      const tableNameParts = fullTableName.split('_');
+      const prefix = tableNameParts.slice(0, 2).join('_') + '_';
+      
+      // Make sure target table has proper prefix
+      let targetTable = fk.targetTable;
+      if (!targetTable.includes(prefix)) {
+        targetTable = prefix + targetTable;
+      }
+      
+      return `CONSTRAINT "fk_${fk.sourceColumn}_${targetTable}" FOREIGN KEY ("${fk.sourceColumn}") REFERENCES "${targetTable}" ("${fk.targetColumn}") ON DELETE CASCADE`;
+    });
+    
+    // Combine column definitions and foreign key constraints
+    const allDefinitions = [...columnDefinitions];
+    if (fkConstraints.length > 0) {
+      allDefinitions.push(...fkConstraints);
+    }
+    
     // Create the table
-    sql += `CREATE TABLE "${fullTableName}" (\n  ${columnDefinitions.join(',\n  ')}\n);\n\n`;
+    sql += `CREATE TABLE "${fullTableName}" (\n  ${allDefinitions.join(',\n  ')}\n);\n\n`;
     
     // Function name needs to be sanitized for SQL
     const safeFunctionName = fullTableName.replace(/[^a-zA-Z0-9_]/g, '_');

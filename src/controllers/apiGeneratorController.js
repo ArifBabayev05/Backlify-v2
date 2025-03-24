@@ -77,11 +77,23 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
     // Generate column definitions
     const columnDefs = columns.map(col => {
+      // Extract foreign key declarations for separate handling
+      let colString = `    ${col.name} ${col.type}`;
+      
       // Convert any array constraints to string
-      const constraints = Array.isArray(col.constraints) 
+      let constraints = Array.isArray(col.constraints) 
         ? col.constraints.join(' ') 
         : (col.constraints || '');
-      return `    ${col.name} ${col.type} ${constraints}`.trim();
+      
+      // Remove any inline foreign key definitions from constraints
+      constraints = constraints.replace(/foreign\s+key\s+references\s+[^\s,)]+(\([^\s,)]+\))?/gi, '').trim();
+      
+      // Add the cleaned constraints
+      if (constraints) {
+        colString += ` ${constraints}`;
+      }
+      
+      return colString.trim();
     });
 
     // Add timestamps if not present
@@ -91,9 +103,37 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     if (!columns.find(col => col.name === 'updated_at')) {
       columnDefs.push('    updated_at timestamp with time zone DEFAULT now()');
     }
+    
+    // Check if XAuthUserId column exists, if not add it
+    if (!columns.find(col => col.name === 'XAuthUserId')) {
+      columnDefs.push('    "XAuthUserId" varchar(255) NOT NULL');
+    }
 
-    // Only include foreign keys if requested
-    const allDefs = columnDefs;
+    // Process foreign keys separately as constraints
+    const foreignKeyDefs = [];
+    if (relationships && relationships.length > 0) {
+      relationships.forEach(rel => {
+        if (rel.sourceColumn && rel.targetTable && rel.targetColumn) {
+          // Make sure target table has proper prefix
+          let targetTable = rel.targetTable;
+          if (!targetTable.includes(`${XAuthUserId}_`)) {
+            const tableParts = targetTable.split('_');
+            const originalTableName = tableParts[tableParts.length - 1];
+            targetTable = `${XAuthUserId}_${rel.apiIdentifier || tableSchema.apiIdentifier || name.split('_')[1]}_${originalTableName}`;
+          }
+          
+          foreignKeyDefs.push(`    CONSTRAINT fk_${rel.sourceColumn}_${rel.targetTable.replace(/[^a-zA-Z0-9_]/g, '_')} FOREIGN KEY (${rel.sourceColumn}) REFERENCES ${targetTable}(${rel.targetColumn}) ON DELETE CASCADE`);
+        }
+      });
+    }
+
+    // Combine all definitions
+    const allDefs = [...columnDefs];
+    
+    // Add foreign key constraints if any
+    if (foreignKeyDefs.length > 0) {
+      allDefs.push(...foreignKeyDefs);
+    }
 
     return `
 -- Create table: ${fullTableName}
