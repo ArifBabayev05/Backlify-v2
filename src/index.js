@@ -772,7 +772,7 @@ app.post('/modify-schema', (req, res) => {
 });
 
 // 3. API generator from schema
-app.post('/create-api-from-schema', (req, res) => {
+app.post('/create-api-from-schema', async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
@@ -834,25 +834,127 @@ app.post('/create-api-from-schema', (req, res) => {
   // Generate API from the provided schema
   try {
     // This would call the API generator with the provided schema
-    apiGeneratorController.generateAPIFromSchema(tables, XAuthUserIdToUse)
-      .then(result => {
-        res.json({
+    const result = await apiGeneratorController.generateAPIFromSchema(tables, XAuthUserIdToUse);
+    
+    // After API generation, verify that tables actually exist in the database before returning success
+    console.log("Verifying all tables have been created properly...");
+    
+    // Create client to check tables
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    const apiIdentifier = result.apiId; // Use the generated API ID as identifier
+    
+    // Check each table for existence
+    const tablesToCheck = tables.map(table => ({
+      originalName: table.name,
+      prefixedName: `${XAuthUserIdToUse}_${apiIdentifier}_${table.name}`.toLowerCase() // Ensure lowercase
+    }));
+    
+    const tableResults = [];
+    let allTablesExist = true;
+    let partialSuccess = false;
+    
+    // Check each table
+    for (const table of tablesToCheck) {
+      try {
+        // Get lowercase table name for consistent checks
+        const tableName = table.prefixedName.toLowerCase();
+        
+        // Try direct query
+        const { error: queryError } = await supabase
+          .from(tableName)
+          .select('*', { count: 'exact', head: true });
+          
+        if (!queryError) {
+          tableResults.push({
+            table: table.originalName,
+            prefixedName: tableName,
+            exists: true,
+            error: null
+          });
+          partialSuccess = true;
+          continue;
+        }
+        
+        // Try case-insensitive check if direct query fails
+        const { data: sqlData, error: sqlError } = await supabase.rpc('execute_sql', { 
+          sql_query: `
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_name = '${tableName}'
+            ) as exists;
+          `
+        });
+        
+        const exists = !sqlError && sqlData && sqlData[0] && sqlData[0].exists === true;
+        
+        tableResults.push({
+          table: table.originalName,
+          prefixedName: tableName,
+          exists: exists,
+          error: exists ? null : (queryError ? queryError.message : "Table not found")
+        });
+        
+        if (exists) {
+          partialSuccess = true;
+        } else {
+          allTablesExist = false;
+        }
+      } catch (err) {
+        tableResults.push({
+          table: table.originalName,
+          prefixedName: tableName,
+          exists: false,
+          error: err.message
+        });
+        allTablesExist = false;
+      }
+    }
+    
+    // If not all tables exist but some do, return partial success
+    if (!allTablesExist) {
+      if (partialSuccess) {
+        // Some tables were created, return partial success with warnings
+        return res.status(207).json({
           success: true,
+          warning: 'Some tables were not created properly',
+          partialSuccess: true,
           swagger_url: `/api/${result.apiId}/docs`,
           XAuthUserId: XAuthUserIdToUse,
           apiId: result.apiId,
-          tables: tables, // Include the original tables in the response
-          message: 'API successfully generated and tables created in Supabase',
+          tables: tables,
+          message: 'API generated but with incomplete table creation. Some features may not work correctly.',
+          tableStatus: tableResults,
           endpoints: result.endpoints
         });
-      })
-      .catch(error => {
-        console.error('Error generating API from schema:', error);
-        res.status(500).json({ error: error.message });
-      });
+      } else {
+        // No tables were created successfully, return an error
+        return res.status(500).json({
+          error: 'Failed to create tables',
+          details: 'None of the required tables could be created in the database.',
+          tableStatus: tableResults
+        });
+      }
+    }
+    
+    // All tables exist, return success response
+    res.json({
+      success: true,
+      swagger_url: `/api/${result.apiId}/docs`,
+      XAuthUserId: XAuthUserIdToUse,
+      apiId: result.apiId,
+      tables: tables,
+      message: 'API successfully generated and tables created in Supabase',
+      endpoints: result.endpoints,
+      tableStatus: tableResults
+    });
   } catch (error) {
     console.error('Error generating API from schema:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: 'Error generating API from schema', 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

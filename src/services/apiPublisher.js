@@ -284,7 +284,7 @@ class APIPublisher {
       // Get the apiIdentifier from metadata to maintain table name consistency
       const apiIdentifier = metadata.apiIdentifier;
       
-      console.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
+      //console.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
       
       // Only proceed if we have tables information
       if (!metadata || !metadata.tables || !Array.isArray(metadata.tables)) {
@@ -321,7 +321,7 @@ class APIPublisher {
       const regeneratedRouter = generateEndpoints(safeTableSchemas, XAuthUserId, apiIdentifier);
       
       // Log the API identifier being used for verification
-      console.log(`Router created with apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
+      //console.log(`Router created with apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
       
       // Store the regenerated API router
       this.apiInstances.set(apiId, regeneratedRouter);
@@ -338,7 +338,7 @@ class APIPublisher {
       
       this.apiMetadata.set(apiId, safeMetadata);
       
-      console.log(`Successfully restored API: ${apiId} with router instance ${regeneratedRouter._instanceId} and apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
+      //console.log(`Successfully restored API: ${apiId} with router instance ${regeneratedRouter._instanceId} and apiIdentifier: ${regeneratedRouter.apiIdentifier}`);
       
       // If requested, also update the apiGeneratorController maps
       if (updateController) {
@@ -366,7 +366,7 @@ class APIPublisher {
           }
           apiGeneratorController.userApiMapping.get(XAuthUserId).add(apiId);
           
-          console.log(`Updated apiGeneratorController maps for API ${apiId}`);
+          //console.log(`Updated apiGeneratorController maps for API ${apiId}`);
         } catch (updateError) {
           console.error('Error updating apiGeneratorController:', updateError);
         }
@@ -418,7 +418,7 @@ class APIPublisher {
           // Log API being restored with its XAuthUserId and apiIdentifier
           const XAuthUserId = metadata.XAuthUserId || 'default';
           const apiIdentifier = metadata.apiIdentifier;
-          console.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
+          //onsole.log(`Restoring API ${apiId} for user ${XAuthUserId} with apiIdentifier: ${apiIdentifier || 'none-specified'}`);
           
           // Clone the metadata to prevent shared references
           const safeMetadata = JSON.parse(JSON.stringify(metadata));
@@ -432,7 +432,7 @@ class APIPublisher {
             continue;
           }
           
-          console.log(`Successfully restored API ${apiId} with identifier ${regeneratedRouter.apiIdentifier}`);
+          //console.log(`Successfully restored API ${apiId} with identifier ${regeneratedRouter.apiIdentifier}`);
         } catch (err) {
           console.error(`Failed to restore API ${item.api_id}:`, err);
         }

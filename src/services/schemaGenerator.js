@@ -10,26 +10,22 @@ class SchemaGenerator {
   }
 
   async generateSchemas(analysisResult, XAuthUserId = 'default', apiIdentifier = null) {
-    const createdTables = [];
-    
     try {
-      // First, make sure we have the execute_sql function
-      await this._ensureSqlFunction();
-      
       // Generate a unique API identifier if not provided
       const effectiveApiId = apiIdentifier || Math.random().toString(36).substring(2, 8);
       
       // Make a deep copy of the tables to avoid modifying the original
       const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
       
-      console.log("Original tables structure:", JSON.stringify(tablesData, null, 2));
+      // First pass: Create all tables with properly prefixed names
+      console.log("First pass: Creating tables...");
+      const createdTables = [];
       
-      // First pass: Create all tables with all columns including FK columns
-      console.log("First pass: Creating all tables...");
       for (const table of tablesData) {
         // Add XAuthUserId AND API identifier prefix to table name
-        const prefixedTableName = `${XAuthUserId}_${effectiveApiId}_${table.name}`;
+        // IMPORTANT: Always use lowercase for table names to avoid PostgreSQL case sensitivity issues
         const originalName = table.name;
+        const prefixedTableName = `${XAuthUserId}_${effectiveApiId}_${originalName}`.toLowerCase();
         table.name = prefixedTableName;
         
         // Store schema in memory with XAuthUserId prefix
@@ -59,55 +55,63 @@ class SchemaGenerator {
         }
       }
       
+      // Add a delay to ensure all tables are fully created before adding relationships
+      console.log("Waiting for tables to be fully created...");
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       // Second pass: Add relationships between tables
       console.log("Second pass: Adding relationships...");
       for (const table of tablesData) {
-        // Skip if no relationships
-        if (!table.relationships || !Array.isArray(table.relationships) || table.relationships.length === 0) {
-          continue;
-        }
-        
-        const sourceTable = table.name; // Already prefixed
-        
-        for (const rel of table.relationships) {
-          // Skip invalid relationships
-          if (!rel.targetTable || !rel.sourceColumn || !rel.targetColumn) {
-            console.warn('Skipping invalid relationship:', rel);
-            continue;
-          }
-          
-          // Ensure target table has XAuthUserId AND API identifier prefix
-          const targetTable = rel.targetTable.includes(`${XAuthUserId}_${effectiveApiId}_`) 
-            ? rel.targetTable 
-            : `${XAuthUserId}_${effectiveApiId}_${rel.targetTable}`;
-          
-          // Create the relationship
-          try {
-            await this._createRelationship(
-              sourceTable, 
-              targetTable, 
-              rel.type || 'one-to-many', 
-              rel.sourceColumn, 
-              rel.targetColumn
-            );
-            console.log(`Created relationship from ${sourceTable}.${rel.sourceColumn} to ${targetTable}.${rel.targetColumn}`);
-          } catch (error) {
-            console.error(`Failed to create relationship:`, error);
+        const relationships = table.relationships || [];
+        if (relationships.length > 0) {
+          for (const rel of relationships) {
+            try {
+              // Make sure we use the prefixed table names
+              const sourceTable = table.name;
+              let targetTable = rel.targetTable;
+              
+              // If the target table doesn't already include the prefix, add it
+              if (!targetTable.startsWith(`${XAuthUserId}_${effectiveApiId}_`)) {
+                targetTable = `${XAuthUserId}_${effectiveApiId}_${targetTable}`;
+              }
+              
+              console.log(`Adding relationship: ${sourceTable}.${rel.sourceColumn} -> ${targetTable}.${rel.targetColumn}`);
+              
+              // Create relationship
+              const relResult = await this._createRelationship(
+                sourceTable,
+                targetTable,
+                rel.type || 'many-to-one',
+                rel.sourceColumn,
+                rel.targetColumn || 'id'
+              );
+              
+              if (!relResult.success) {
+                console.error(`Failed to create relationship:`, relResult.message);
+              } else {
+                console.log(`Relationship created successfully`);
+              }
+            } catch (error) {
+              console.error(`Error creating relationship:`, error);
+            }
           }
         }
       }
       
-      // Third pass (optional): Add sample data if requested
-      if (analysisResult.addSampleData) {
-        console.log("Third pass: Adding sample data...");
-        for (const table of tablesData) {
+      // Third pass: Add sample data
+      console.log("Third pass: Adding sample data...");
+      for (const table of tablesData) {
+        try {
           await this._addSampleData(table, XAuthUserId);
+        } catch (error) {
+          console.error(`Error adding sample data to ${table.name}:`, error);
+          // Continue even if sample data insertion fails
         }
       }
       
       return createdTables;
     } catch (error) {
-      console.error("Error generating schemas:", error);
+      console.error('Schema generation failed:', error);
       throw error;
     }
   }
@@ -254,7 +258,9 @@ class SchemaGenerator {
       // Add XAuthUserId column if needed
       tableSchema = await this._addXAuthUserIdColumnIfNeeded(tableSchema);
       
-      const { name, columns = [] } = tableSchema;
+      // Ensure table name is lowercase for consistency
+      const { name: originalName, columns = [] } = tableSchema;
+      const name = originalName.toLowerCase();
       
       console.log(`Attempting to create table ${name} in Supabase...`);
       
@@ -309,7 +315,7 @@ class SchemaGenerator {
                     });
                     
                     // Remove the references part from the constraint for now
-                    // We'll add proper foreign keys later
+                    // We'll add proper foreign keys later - just keep the column as not null
                     constraintText += ` not null`;
                   } else {
                     constraintText += ` ${constraint}`;
@@ -403,7 +409,6 @@ class SchemaGenerator {
       `;
       
       console.log(`Generated SQL for table ${name}:`);
-      console.log(sql);
       
       // Execute the SQL using Supabase Edge Function or direct database access
       console.log('Executing SQL to create table...');
@@ -416,61 +421,8 @@ class SchemaGenerator {
       
       console.log(`Table ${name} creation response:`, data);
       
-      // Now that the table is created, add foreign key constraints separately
-      if (foreignKeys.length > 0) {
-        for (const fk of foreignKeys) {
-          // Extract table prefix from current table name
-          const tableNameParts = name.split('_');
-          const prefix = tableNameParts.slice(0, 2).join('_') + '_';
-          
-          // Make sure target table has proper prefix and case
-          let targetTable = fk.targetTable;
-          if (!targetTable.startsWith(prefix)) {
-            targetTable = prefix + targetTable;
-          }
-          
-          // Add the foreign key constraint with explicit quotation
-          const fkSql = `
-            DO $$
-            BEGIN
-              -- Make sure tables exist before adding constraint
-              IF EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = '${name.toLowerCase()}'
-              ) AND EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = '${targetTable.toLowerCase()}'
-              ) THEN
-                -- Add the foreign key constraint if it doesn't exist
-                IF NOT EXISTS (
-                  SELECT 1 FROM information_schema.table_constraints
-                  WHERE constraint_name = 'fk_${name}_${fk.sourceColumn}_${targetTable}'
-                ) THEN
-                  -- First ensure the referenced table has data to prevent constraint violations
-                  EXECUTE 'ALTER TABLE "${name}" 
-                  ADD CONSTRAINT "fk_${name}_${fk.sourceColumn}_${targetTable}" 
-                  FOREIGN KEY ("${fk.sourceColumn}") 
-                  REFERENCES "${targetTable}" ("${fk.targetColumn}") ON DELETE CASCADE';
-                END IF;
-              ELSE
-                RAISE NOTICE 'Tables not found for foreign key: ${name} -> ${targetTable}';
-              END IF;
-            END;
-            $$;
-          `;
-          
-          // Execute the foreign key addition
-          console.log(`Adding foreign key from ${name}.${fk.sourceColumn} to ${targetTable}.${fk.targetColumn}`);
-          const { data: fkData, error: fkError } = await this.supabase.rpc('execute_sql', { sql_query: fkSql });
-          
-          if (fkError) {
-            console.error(`Warning: Could not add foreign key constraint:`, fkError);
-            // Don't return error, continue with table creation
-          }
-        }
-      }
+      // Do NOT add foreign key constraints at this stage - those will be handled separately
+      // in the second pass of the generateSchemas method
       
       // Double-check if the table exists
       try {
@@ -480,7 +432,24 @@ class SchemaGenerator {
           
         if (verifyError) {
           console.error(`Table ${name} verification failed:`, verifyError);
-          return { success: false, message: `Table verification failed: ${verifyError.message}` };
+          
+          // Try verifying with SQL instead
+          try {
+            const { data: sqlData, error: sqlError } = await this.supabase.rpc('execute_sql', {
+              sql_query: `SELECT EXISTS (SELECT FROM information_schema.tables 
+                          WHERE table_schema = 'public' AND table_name = '${name.toLowerCase()}') as exists;`
+            });
+            
+            if (sqlError || !sqlData || !sqlData[0] || !sqlData[0].exists) {
+              return { success: false, message: `Table verification failed: Table does not exist` };
+            }
+            
+            console.log(`✅ Table ${name} verified via SQL check`);
+            return { success: true };
+          } catch (sqlCheckError) {
+            console.error(`SQL verification check failed:`, sqlCheckError);
+            return { success: false, message: `Table verification failed: ${verifyError.message}` };
+          }
         } else {
           console.log(`✅ Table ${name} verified successfully`);
           return { success: true };
@@ -496,19 +465,66 @@ class SchemaGenerator {
   }
 
   async _createRelationship(sourceTable, targetTable, type, sourceColumn, targetColumn) {
-    // Generate relationship SQL
-    const relationshipSQL = this._generateRelationshipSQL(
-      sourceTable,
-      targetTable,
-      type,
-      sourceColumn,
-      targetColumn
-    );
-    
-    return await this._executeSql(
-      relationshipSQL, 
-      `Creating relationship between ${sourceTable} and ${targetTable}`
-    );
+    try {
+      // Ensure table names are lowercase for consistency
+      const sourceTableLower = sourceTable.toLowerCase();
+      const targetTableLower = targetTable.toLowerCase();
+      
+      // Generate relationship SQL
+      const relationshipSQL = this._generateRelationshipSQL(
+        sourceTableLower,
+        targetTableLower,
+        type,
+        sourceColumn,
+        targetColumn
+      );
+      
+      // Check if both tables exist before trying to create relationship
+      const tablesExistSQL = `
+        SELECT 
+          (SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND 
+                  table_name = '${sourceTableLower}'
+          )) as source_exists,
+          (SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND 
+                  table_name = '${targetTableLower}'
+          )) as target_exists;
+      `;
+      
+      const { data: tableCheck, error: tableCheckError } = await this.supabase.rpc('execute_sql', { 
+        sql_query: tablesExistSQL 
+      });
+      
+      if (tableCheckError || !tableCheck) {
+        console.error(`Error checking table existence for relationship:`, tableCheckError || 'No data returned');
+        return { success: false, message: 'Error checking table existence' };
+      }
+      
+      const sourceExists = tableCheck[0]?.source_exists === true;
+      const targetExists = tableCheck[0]?.target_exists === true;
+      
+      if (!sourceExists || !targetExists) {
+        console.error(`Cannot create relationship - source exists: ${sourceExists}, target exists: ${targetExists}`);
+        return { 
+          success: false, 
+          message: `Cannot create relationship - missing tables. Source: ${sourceExists ? 'exists' : 'missing'}, Target: ${targetExists ? 'exists' : 'missing'}`
+        };
+      }
+      
+      // Both tables exist, proceed with creating the relationship
+      console.log(`Creating relationship between ${sourceTableLower}.${sourceColumn} and ${targetTableLower}.${targetColumn}`);
+      
+      return await this._executeSql(
+        relationshipSQL, 
+        `Creating relationship between ${sourceTableLower} and ${targetTableLower}`
+      );
+    } catch (error) {
+      console.error(`Error creating relationship:`, error);
+      return { success: false, message: error.message };
+    }
   }
 
   async _addSampleData(tableSchema, XAuthUserId) {
@@ -539,7 +555,7 @@ class SchemaGenerator {
       
       // Execute the SQL using Supabase's SQL API
       const { data, error } = await this.supabase.rpc('execute_sql', {
-        sql: sql
+        sql_query: sql
       });
       
       if (error) {
@@ -740,8 +756,12 @@ EXECUTE FUNCTION update_modified_column_${safeFunctionName}();
   }
 
   _generateRelationshipSQL(sourceTable, targetTable, type, sourceColumn, targetColumn) {
+    // Ensure all names are lowercase for consistency
+    sourceTable = sourceTable.toLowerCase();
+    targetTable = targetTable.toLowerCase();
+    
     // Use quoted identifiers and clean names
-    const constraintName = `fk_${sourceTable.replace(/[^a-zA-Z0-9_]/g, '_')}_${sourceColumn}_${targetTable.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    const constraintName = `fk_${sourceTable.replace(/[^a-zA-Z0-9_]/g, '_')}_${sourceColumn}_${targetTable.replace(/[^a-zA-Z0-9_]/g, '_')}`.toLowerCase();
     
     // Debug
     console.log(`Creating FK: ${sourceTable}.${sourceColumn} -> ${targetTable}.${targetColumn}`);
@@ -752,19 +772,19 @@ EXECUTE FUNCTION update_modified_column_${safeFunctionName}();
 DO $$
 BEGIN
     -- Ensure tables exist
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${sourceTable.toLowerCase()}') AND 
-       EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${targetTable.toLowerCase()}') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${sourceTable}') AND 
+       EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${targetTable}') THEN
        
         -- Check if the column exists
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                      WHERE table_name = '${sourceTable.toLowerCase()}' AND column_name = '${sourceColumn.toLowerCase()}') THEN
+                      WHERE table_name = '${sourceTable}' AND column_name = '${sourceColumn.toLowerCase()}') THEN
             -- Add the column if it doesn't exist
             EXECUTE 'ALTER TABLE "${sourceTable}" ADD COLUMN "${sourceColumn}" uuid NOT NULL';
         END IF;
         
         -- Add the foreign key constraint
         IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
-                      WHERE constraint_name = '${constraintName.toLowerCase()}') THEN
+                      WHERE constraint_name = '${constraintName}') THEN
             BEGIN
                 ALTER TABLE "${sourceTable}" 
                 ADD CONSTRAINT "${constraintName}" 

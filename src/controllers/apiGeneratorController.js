@@ -479,6 +479,12 @@ Please modify the existing schema based on the modification request. Return the 
     }
   }
   
+  // Helper function to ensure consistent table naming
+  standardizeTableName(userId, apiId, tableName) {
+    // Always use lowercase for table names to avoid PostgreSQL case sensitivity issues
+    return `${userId}_${apiId}_${tableName}`.toLowerCase();
+  }
+
   // Generate API from provided schema - new method for separate endpoint
   async generateAPIFromSchema(tables, XAuthUserId = 'default') {
     try {
@@ -494,8 +500,8 @@ Please modify the existing schema based on the modification request. Return the 
       safeTableSchemas.forEach(table => {
         // Store the original name for reference
         table.originalName = table.name;
-        // Set the prefixed name that will be used in the database with API identifier
-        table.prefixedName = `${XAuthUserId}_${apiIdentifier}_${table.name}`;
+        // Set the prefixed name that will be used in the database with API identifier - using lowercase
+        table.prefixedName = this.standardizeTableName(XAuthUserId, apiIdentifier, table.name);
         
         // For relationships, ensure they point to prefixed tables
         if (table.relationships && Array.isArray(table.relationships)) {
@@ -503,12 +509,11 @@ Please modify the existing schema based on the modification request. Return the 
             // Store original target table
             rel.originalTargetTable = rel.targetTable;
             // Update target table to use the prefixed name with API identifier
-            rel.targetTable = `${XAuthUserId}_${apiIdentifier}_${rel.targetTable}`;
+            rel.targetTable = this.standardizeTableName(XAuthUserId, apiIdentifier, rel.targetTable);
           });
         }
       });
       
-      // First, create the tables in Supabase
       console.log('Creating tables in Supabase...');
       
       // Create a fake analysis result that matches what schemaGenerator.generateSchemas expects
@@ -529,22 +534,187 @@ Please modify the existing schema based on the modification request. Return the 
         })
       };
       
-      // Now create the tables in Supabase
-      const createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, XAuthUserId, apiIdentifier);
-      console.log(`Created ${createdTables.length} tables in Supabase`);
+      // Try to create tables - if standard approach fails, try alternative methods
+      let createdTables = [];
+      let allTablesExist = false;
+      const schemaGenerator = require('../services/schemaGenerator');
+      const config = require('../config/config');
+      const { createClient } = require('@supabase/supabase-js');
       
-      // Log all table names for debugging
-      console.log('Tables created with prefix:');
-      createdTables.forEach(table => {
-        console.log(`- ${table.prefixedName}`);
-      });
+      // Method 1: Try the standard approach first (with foreign keys handled properly)
+      try {
+        console.log("Attempt 1: Standard table creation approach...");
+        createdTables = await schemaGenerator.generateSchemas(fakeAnalysisResult, XAuthUserId, apiIdentifier);
+        
+        // Verify tables exist
+        allTablesExist = await this.verifyAllTablesExist(createdTables);
+        
+        if (allTablesExist) {
+          console.log("Standard approach successful - all tables created properly");
+        } else {
+          console.warn("Standard approach failed - some tables are missing. Trying alternative approach...");
+        }
+      } catch (err) {
+        console.error("Error with standard table creation:", err.message);
+        allTablesExist = false;
+      }
+      
+      // Method 2: If standard approach failed, try creating tables without foreign keys first
+      if (!allTablesExist) {
+        try {
+          console.log("Attempt 2: Creating tables without foreign keys first...");
+          
+          // Temporarily remove relationships
+          const tablesWithoutRelationships = fakeAnalysisResult.tables.map(table => ({
+            ...table,
+            relationships: [] // Remove relationships temporarily
+          }));
+          
+          // Create tables without foreign keys
+          const simplifiedAnalysisResult = { tables: tablesWithoutRelationships };
+          
+          // Create basic tables first
+          createdTables = await schemaGenerator.generateSchemas(simplifiedAnalysisResult, XAuthUserId, apiIdentifier);
+          
+          // Now add foreign keys manually using SQL
+          console.log("Tables created without relationships. Now adding foreign keys manually...");
+          const client = createClient(config.supabase.url, config.supabase.key);
+          
+          // Process each table's relationships
+          for (const table of fakeAnalysisResult.tables) {
+            if (!table.relationships || !Array.isArray(table.relationships) || table.relationships.length === 0) {
+              continue;
+            }
+            
+            const sourcePrefixedTable = this.standardizeTableName(XAuthUserId, apiIdentifier, table.name);
+            
+            for (const rel of table.relationships) {
+              try {
+                const targetTable = this.standardizeTableName(XAuthUserId, apiIdentifier, rel.originalTargetTable || rel.targetTable.split('_').pop());
+                
+                console.log(`Adding foreign key for ${sourcePrefixedTable}.${rel.sourceColumn} -> ${targetTable}`);
+                
+                // Create SQL for the foreign key
+                const constraintName = `fk_${sourcePrefixedTable}_${rel.sourceColumn}_${targetTable}`.toLowerCase();
+                const sql = `
+                  DO $$
+                  BEGIN
+                    IF NOT EXISTS (
+                      SELECT 1 FROM information_schema.table_constraints 
+                      WHERE constraint_name = '${constraintName}'
+                    ) THEN
+                      ALTER TABLE "${sourcePrefixedTable}" 
+                      ADD CONSTRAINT "${constraintName}" 
+                      FOREIGN KEY ("${rel.sourceColumn}") 
+                      REFERENCES "${targetTable}" ("${rel.targetColumn || 'id'}") 
+                      ON DELETE CASCADE;
+                    END IF;
+                  EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'Error adding constraint %: %', '${constraintName}', SQLERRM;
+                  END $$;
+                `;
+                
+                // Execute the SQL
+                const { error } = await client.rpc('execute_sql', { sql_query: sql });
+                if (error) {
+                  console.warn(`Warning: Could not add foreign key constraint:`, error.message);
+                }
+              } catch (relError) {
+                console.warn(`Warning: Failed to add relationship:`, relError.message);
+              }
+            }
+          }
+          
+          // Verify all tables exist
+          allTablesExist = await this.verifyAllTablesExist(createdTables);
+          
+          if (allTablesExist) {
+            console.log("Alternative approach successful - created tables and added foreign keys separately");
+          } else {
+            console.warn("Alternative approach partially successful - some tables may be missing");
+          }
+        } catch (alternativeError) {
+          console.error("Error with alternative table creation:", alternativeError.message);
+        }
+      }
+      
+      // Method 3: Last resort - direct SQL execution for each table
+      if (!allTablesExist) {
+        try {
+          console.log("Attempt 3: Direct SQL execution for each table...");
+          const client = createClient(config.supabase.url, config.supabase.key);
+          
+          // Track created tables
+          const directlyCreatedTables = [];
+          
+          // Create each table using direct SQL
+          for (const table of fakeAnalysisResult.tables) {
+            try {
+              // IMPORTANT: Consistently use lowercase for table names to avoid case sensitivity issues
+              const originalName = table.name;
+              const prefixedTableName = this.standardizeTableName(XAuthUserId, apiIdentifier, originalName);
+              
+              // Log the standardized naming
+              console.log(`Creating table with standardized lowercase name: ${prefixedTableName}`);
+              
+              // Generate basic table SQL without foreign keys
+              const sql = `
+                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+                
+                DROP TABLE IF EXISTS "${prefixedTableName}" CASCADE;
+                
+                CREATE TABLE "${prefixedTableName}" (
+                  "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+                  ${table.columns
+                    .filter(col => col.name !== 'id')
+                    .map(col => `"${col.name}" ${col.type}${col.constraints ? ' ' + (Array.isArray(col.constraints) ? col.constraints.join(' ') : col.constraints).replace(/references\s+[^\s,)]+(\([^\s,)]+\))?/gi, '') : ''}`.trim())
+                    .join(',\n                  ')
+                  }${table.columns.some(col => col.name === 'created_at') ? '' : ',\n                  "created_at" timestamp with time zone DEFAULT now()'}${table.columns.some(col => col.name === 'updated_at') ? '' : ',\n                  "updated_at" timestamp with time zone DEFAULT now()'}${table.columns.some(col => col.name === 'XAuthUserId') ? '' : ',\n                  "XAuthUserId" varchar(255)'}
+                );
+              `;
+              
+              const { error } = await client.rpc('execute_sql', { sql_query: sql });
+              
+              if (!error) {
+                console.log(`Successfully created table ${prefixedTableName} using direct SQL`);
+                directlyCreatedTables.push({
+                  prefixedName: prefixedTableName,
+                  originalName: originalName,
+                  name: originalName
+                });
+              } else {
+                console.error(`Failed to create table ${prefixedTableName} with direct SQL:`, error);
+              }
+            } catch (tableError) {
+              console.error(`Error creating table ${table.name}:`, tableError.message);
+            }
+          }
+          
+          // Override createdTables with our directly created ones
+          if (directlyCreatedTables.length > 0) {
+            createdTables = directlyCreatedTables;
+            // Final verification
+            allTablesExist = await this.verifyAllTablesExist(createdTables);
+          }
+          
+          if (allTablesExist) {
+            console.log("Direct SQL approach successful");
+          } else {
+            console.warn("All approaches failed to create all tables");
+          }
+        } catch (directError) {
+          console.error("Error with direct SQL table creation:", directError.message);
+        }
+      }
+      
+      // If we still don't have all tables, throw error
+      if (!allTablesExist) {
+        throw new Error(`Failed to create all required tables despite multiple approaches. Tables may be partially created.`);
+      }
       
       // Create API endpoints with isolated schemas
       console.log('Creating API endpoints...');
       const router = apiGenerator.generateEndpoints(safeTableSchemas, XAuthUserId, apiIdentifier);
-      
-      // Verify the API identifier is being used consistently
-      console.log(`API router created with identifier: ${router.apiIdentifier}`);
       
       // Generate SQL for the tables
       const sql = this.generateSQL(safeTableSchemas, XAuthUserId, apiIdentifier);
@@ -601,6 +771,147 @@ Please modify the existing schema based on the modification request. Return the 
     } catch (error) {
       console.error('Error generating API from schema:', error);
       throw error;
+    }
+  }
+  
+  // Helper method to verify all tables exist
+  async verifyAllTablesExist(tables) {
+    try {
+      console.log(`Verifying existence of ${tables.length} tables...`);
+      const { createClient } = require('@supabase/supabase-js');
+      const config = require('../config/config');
+      const client = createClient(config.supabase.url, config.supabase.key);
+      
+      // Track which tables we've verified
+      const tableStatus = [];
+      
+      // Check each table
+      for (const table of tables) {
+        // Get the table name, ensuring consistent case
+        let tableName;
+        if (table.prefixedName) {
+          // Use the existing prefixed name, but ensure it's lowercase
+          tableName = table.prefixedName.toLowerCase();
+        } else if (table.XAuthUserId && table.apiIdentifier) {
+          // Generate the name using our standardization function
+          tableName = this.standardizeTableName(table.XAuthUserId, table.apiIdentifier, table.originalName || table.name);
+        } else {
+          // Fallback - just lowercase the name we have
+          tableName = (table.prefixedName || table.name).toLowerCase();
+        }
+        
+        console.log(`Verifying table: ${tableName}`);
+        
+        let tableExists = false;
+        let errorMessage = null;
+        
+        // Method 1: Direct query using from().select()
+        try {
+          const { data, error } = await client
+            .from(tableName)
+            .select('*', { count: 'exact', head: true });
+          
+          if (!error) {
+            tableExists = true;
+            console.log(`✅ Table ${tableName} verified successfully through direct query`);
+          } else {
+            errorMessage = error.message;
+            console.log(`Direct query check failed: ${error.message}, trying alternative methods...`);
+          }
+        } catch (err) {
+          errorMessage = err.message;
+          console.log(`Error in direct query check: ${err.message}`);
+        }
+        
+        // Method 2: Check using information_schema query with case-insensitive matching
+        if (!tableExists) {
+          try {
+            const { data, error } = await client.rpc('execute_sql', { 
+              sql_query: `
+                SELECT EXISTS (
+                  SELECT FROM information_schema.tables 
+                  WHERE table_schema = 'public' 
+                  AND lower(table_name) = '${tableName}'
+                ) as exists;
+              `
+            });
+            
+            if (!error && data && data[0] && data[0].exists === true) {
+              tableExists = true;
+              console.log(`✅ Table ${tableName} verified through information_schema (case-insensitive)`);
+            } else if (error) {
+              errorMessage = (errorMessage || "") + "; " + error.message;
+              console.log(`Information schema check failed: ${error.message}`);
+            } else {
+              console.log(`Table ${tableName} not found in information_schema`);
+            }
+          } catch (err) {
+            errorMessage = (errorMessage || "") + "; " + err.message;
+            console.log(`Error in information_schema check: ${err.message}`);
+          }
+        }
+        
+        // Method 3: Try a broader search for similarly named tables
+        if (!tableExists) {
+          try {
+            // Look for tables with similar names (to debug case sensitivity issues)
+            const { data, error } = await client.rpc('execute_sql', {
+              sql_query: `
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name ILIKE '%${tableName.split('_').pop()}%';
+              `
+            });
+            
+            if (!error && data && data.length > 0) {
+              console.log(`Found similar tables: ${data.map(row => row.table_name).join(', ')}`);
+              
+              // If we find an exact match with different case, consider it valid
+              const exactMatchDifferentCase = data.find(row => 
+                row.table_name.toLowerCase() === tableName.toLowerCase()
+              );
+              
+              if (exactMatchDifferentCase) {
+                tableExists = true;
+                console.log(`✅ Table ${tableName} verified with different case: ${exactMatchDifferentCase.table_name}`);
+              }
+            }
+          } catch (err) {
+            console.log(`Error in similar name check: ${err.message}`);
+          }
+        }
+        
+        // Record the result
+        tableStatus.push({
+          table: table.originalName || table.name,
+          prefixedName: tableName,
+          exists: tableExists,
+          error: errorMessage
+        });
+        
+        // If any table doesn't exist, the overall result is false
+        if (!tableExists) {
+          console.error(`❌ Table ${tableName} does not exist`);
+        }
+      }
+      
+      // Log the overall status
+      console.log("Table verification results:", tableStatus);
+      
+      // Check if all tables exist
+      const allExist = tableStatus.every(status => status.exists);
+      
+      if (allExist) {
+        console.log('✅ All tables verified successfully');
+      } else {
+        console.error('❌ Some tables are missing:', tableStatus.filter(s => !s.exists).map(s => s.prefixedName).join(', '));
+      }
+      
+      return allExist;
+    } catch (error) {
+      console.error('Error verifying tables:', error);
+      return false;
     }
   }
 

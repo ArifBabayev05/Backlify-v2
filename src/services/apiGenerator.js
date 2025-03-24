@@ -139,14 +139,14 @@ class APIGenerator {
       let prefixedTableName;
       if (schema.prefixedName) {
         prefixedTableName = schema.prefixedName;
-        console.log(`Using existing prefixedName: ${prefixedTableName}`);
+        //console.log(`Using existing prefixedName: ${prefixedTableName}`);
       } else {
         // Explicitly generate prefixed table name with BOTH XAuthUserId AND apiIdentifier
         // This ensures complete isolation even between APIs from the same user
         prefixedTableName = `${XAuthUserId}_${apiIdentifier}_${tableName}`;
         // Store the prefixed name on the schema to ensure consistency
         schema.prefixedName = prefixedTableName;
-        console.log(`Generated new prefixedName: ${prefixedTableName}`);
+        //console.log(`Generated new prefixedName: ${prefixedTableName}`);
       }
 
       // GET all items with pagination and filtering
