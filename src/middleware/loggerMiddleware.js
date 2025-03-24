@@ -9,13 +9,12 @@ const loggerMiddleware = async (req, res, next) => {
   const startTime = new Date();
   const requestTimestamp = startTime.toISOString();
   
-  // Get user ID from headers or default to 'anonymous'
   const XAuthUserId = req.headers['x-user-id'] || 
                        req.headers['X-USER-ID'] || 
                        req.headers['X-User-Id'] || 
                        req.header('x-user-id') ||
                        (req.body ? req.body.XAuthUserId : null) ||
-                       'anonymous';
+                       'ADMIN';
   
   // Check if this is a request to a specific API
   let apiId = null;
@@ -100,7 +99,7 @@ const loggerMiddleware = async (req, res, next) => {
       if (req.path === '/health' && res.statusCode === 200) {
         return;
       }
-      if (req.path.startsWith('/admin/logs')) {
+      if (req.path.startsWith('/admin/logs') || req.path === ('/')) {
         return;
       }
       

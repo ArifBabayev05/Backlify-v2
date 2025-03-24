@@ -212,6 +212,7 @@ app.post('/auth/register', async (req, res) => {
   }
 });
 // Add an endpoint to view logs
+// Add an endpoint to view logs
 app.get('/admin/logs', async (req, res) => {
   setCorsHeaders(res);
   
@@ -331,16 +332,16 @@ app.get('/admin/logs/stats', async (req, res) => {
     daysAgo.setDate(daysAgo.getDate() - parseInt(days));
     
     // Get statistics using the execute_sql function
-    const { data, error } = await supabase.rpc('execute_sql', {
+    const { data: generalStatsResult, error: generalStatsError } = await supabase.rpc('execute_sql', {
       sql_query: `
         SELECT 
           COUNT(*) as total_requests,
           COUNT(DISTINCT "XAuthUserId") as unique_users,
           AVG(response_time_ms) as avg_response_time,
           MAX(response_time_ms) as max_response_time,
-          COUNT(CASE WHEN response->>'status' LIKE '2%' THEN 1 END) as success_count,
-          COUNT(CASE WHEN response->>'status' LIKE '4%' THEN 1 END) as client_error_count,
-          COUNT(CASE WHEN response->>'status' LIKE '5%' THEN 1 END) as server_error_count,
+          COUNT(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 END) as success_count,
+          COUNT(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 END) as client_error_count,
+          COUNT(CASE WHEN status_code >= 500 THEN 1 END) as server_error_count,
           COUNT(CASE WHEN method = 'GET' THEN 1 END) as get_count,
           COUNT(CASE WHEN method = 'POST' THEN 1 END) as post_count,
           COUNT(CASE WHEN method = 'PUT' THEN 1 END) as put_count,
@@ -349,48 +350,181 @@ app.get('/admin/logs/stats', async (req, res) => {
         WHERE timestamp >= '${daysAgo.toISOString()}'
       `
     });
+
+    // Debug the response structure
+    console.log("Stats result:", JSON.stringify(generalStatsResult));
     
-    if (error) {
+    if (generalStatsError) {
       return res.status(500).json({ 
         error: 'Failed to retrieve log statistics', 
-        details: error.message 
+        details: generalStatsError.message 
       });
     }
     
-    // Get most used endpoints
-    const { data: topEndpoints, error: endpointsError } = await supabase.rpc('execute_sql', {
-      sql_query: `
-        SELECT 
-          endpoint,
-          COUNT(*) as request_count
-        FROM api_logs
-        WHERE timestamp >= '${daysAgo.toISOString()}'
-        GROUP BY endpoint
-        ORDER BY request_count DESC
-        LIMIT 10
-      `
-    });
+    // Get raw rows from execute_sql RPC response - it may have different formats depending on setup
+    let generalStats = { 
+      total_requests: 0, 
+      unique_users: 0,
+      avg_response_time: 0,
+      max_response_time: 0,
+      success_count: 0,
+      client_error_count: 0,
+      server_error_count: 0,
+      get_count: 0,
+      post_count: 0,
+      put_count: 0,
+      delete_count: 0
+    };
+    
+    // Try different ways to extract the result data
+    if (generalStatsResult) {
+      if (generalStatsResult.success && generalStatsResult.rows) {
+        // Format 1: { success: true, rows: [...] }
+        generalStats = generalStatsResult.rows[0] || generalStats;
+      } else if (Array.isArray(generalStatsResult)) {
+        // Format 2: [row1, row2, ...]
+        generalStats = generalStatsResult[0] || generalStats;
+      } else if (typeof generalStatsResult === 'object' && generalStatsResult.success) {
+        // Format 3: Custom RPC that returns { success: true } without data
+        // In this case, we need to call different queries directly
+        console.log("Using direct Supabase API for stats since execute_sql didn't return data");
+        
+        try {
+          // Get total count
+          const { count, error: countError } = await supabase
+            .from('api_logs')
+            .select('*', { count: 'exact', head: true })
+            .gte('timestamp', daysAgo.toISOString());
+            
+          if (!countError) {
+            generalStats.total_requests = count || 0;
+          }
+          
+          // Get unique users directly
+          const { data: usersData, error: usersError } = await supabase
+            .from('api_logs')
+            .select('XAuthUserId')
+            .gte('timestamp', daysAgo.toISOString());
+            
+          if (!usersError && usersData) {
+            const uniqueUsers = new Set();
+            usersData.forEach(log => {
+              if (log.XAuthUserId) {
+                uniqueUsers.add(log.XAuthUserId);
+              }
+            });
+            generalStats.unique_users = uniqueUsers.size;
+          }
+          
+          // Get method counts
+          const { data: methodData, error: methodError } = await supabase
+            .from('api_logs')
+            .select('method, status_code')
+            .gte('timestamp', daysAgo.toISOString());
+            
+          if (!methodError && methodData) {
+            // Calculate method counts manually
+            methodData.forEach(log => {
+              // Count by method
+              if (log.method === 'GET') generalStats.get_count++;
+              else if (log.method === 'POST') generalStats.post_count++;
+              else if (log.method === 'PUT') generalStats.put_count++;
+              else if (log.method === 'DELETE') generalStats.delete_count++;
+              
+              // Count by status code
+              const statusCode = log.status_code;
+              if (statusCode >= 200 && statusCode < 300) generalStats.success_count++;
+              else if (statusCode >= 400 && statusCode < 500) generalStats.client_error_count++;
+              else if (statusCode >= 500) generalStats.server_error_count++;
+            });
+          }
+          
+          // Get response times
+          const { data: timeData, error: timeError } = await supabase
+            .from('api_logs')
+            .select('response_time_ms')
+            .gte('timestamp', daysAgo.toISOString());
+            
+          if (!timeError && timeData && timeData.length > 0) {
+            // Calculate average and max response time
+            let total = 0;
+            let max = 0;
+            
+            timeData.forEach(log => {
+              const time = log.response_time_ms || 0;
+              total += time;
+              if (time > max) max = time;
+            });
+            
+            generalStats.avg_response_time = timeData.length ? Math.round(total / timeData.length) : 0;
+            generalStats.max_response_time = max;
+          }
+        } catch (directError) {
+          console.error('Error getting statistics directly:', directError);
+        }
+      }
+    }
+    
+    // Get most used endpoints (try direct query first)
+    let topEndpoints = [];
+    try {
+      const { data: endpointData, error: endpointError } = await supabase
+        .from('api_logs')
+        .select('endpoint')
+        .gte('timestamp', daysAgo.toISOString());
+        
+      if (!endpointError && endpointData) {
+        // Count occurrences of each endpoint
+        const counts = {};
+        endpointData.forEach(log => {
+          if (log.endpoint) {
+            counts[log.endpoint] = (counts[log.endpoint] || 0) + 1;
+          }
+        });
+        
+        // Convert to array and sort
+        topEndpoints = Object.entries(counts)
+          .map(([endpoint, request_count]) => ({ endpoint, request_count }))
+          .sort((a, b) => b.request_count - a.request_count)
+          .slice(0, 10);
+      }
+    } catch (endpointError) {
+      console.error('Error getting endpoints directly:', endpointError);
+    }
     
     // Get most active users
-    const { data: topUsers, error: usersError } = await supabase.rpc('execute_sql', {
-      sql_query: `
-        SELECT 
-          "XAuthUserId",
-          COUNT(*) as request_count
-        FROM api_logs
-        WHERE timestamp >= '${daysAgo.toISOString()}'
-        GROUP BY "XAuthUserId"
-        ORDER BY request_count DESC
-        LIMIT 10
-      `
-    });
+    let topUsers = [];
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from('api_logs')
+        .select('XAuthUserId')
+        .gte('timestamp', daysAgo.toISOString());
+        
+      if (!userError && userData) {
+        // Count occurrences of each user
+        const counts = {};
+        userData.forEach(log => {
+          if (log.XAuthUserId) {
+            counts[log.XAuthUserId] = (counts[log.XAuthUserId] || 0) + 1;
+          }
+        });
+        
+        // Convert to array and sort
+        topUsers = Object.entries(counts)
+          .map(([XAuthUserId, request_count]) => ({ XAuthUserId, request_count }))
+          .sort((a, b) => b.request_count - a.request_count)
+          .slice(0, 10);
+      }
+    } catch (userError) {
+      console.error('Error getting users directly:', userError);
+    }
     
     // Return the statistics
     res.json({
       timespan: `${days} day(s)`,
       start_date: daysAgo.toISOString(),
       end_date: new Date().toISOString(),
-      general_stats: data,
+      general_stats: generalStats,
       top_endpoints: topEndpoints,
       top_users: topUsers
     });
