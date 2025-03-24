@@ -122,7 +122,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
             targetTable = `${XAuthUserId}_${rel.apiIdentifier || tableSchema.apiIdentifier || name.split('_')[1]}_${originalTableName}`;
           }
           
-          foreignKeyDefs.push(`    CONSTRAINT fk_${rel.sourceColumn}_${rel.targetTable.replace(/[^a-zA-Z0-9_]/g, '_')} FOREIGN KEY (${rel.sourceColumn}) REFERENCES ${targetTable}(${rel.targetColumn}) ON DELETE CASCADE`);
+          // Properly quote identifiers to prevent syntax errors
+          foreignKeyDefs.push(`    CONSTRAINT "fk_${rel.sourceColumn}_${rel.targetTable.replace(/[^a-zA-Z0-9_]/g, '_')}" FOREIGN KEY ("${rel.sourceColumn}") REFERENCES "${targetTable}"("${rel.targetColumn}") ON DELETE CASCADE`);
         }
       });
     }

@@ -17,8 +17,8 @@ class SchemaGenerator {
       // Make a deep copy of the tables to avoid modifying the original
       const tablesData = JSON.parse(JSON.stringify(analysisResult.tables));
       
-      // First pass: Create all tables with properly prefixed names
-      console.log("First pass: Creating tables...");
+      // First pass: Create all tables without relationships
+      console.log("First pass: Creating tables without relationships...");
       const createdTables = [];
       
       for (const table of tablesData) {
@@ -44,14 +44,8 @@ class SchemaGenerator {
           });
         } else {
           console.error(`Failed to create table ${prefixedTableName}:`, createResult.message);
-          // Still add to list for API generation
-          createdTables.push({ 
-            originalName: originalName,
-            prefixedName: prefixedTableName,
-            name: originalName,
-            columns: table.columns,
-            relationships: table.relationships || []
-          });
+          // Don't add to the list if creation failed - this is more accurate
+          // Only add tables that were actually created
         }
       }
       
@@ -59,8 +53,8 @@ class SchemaGenerator {
       console.log("Waiting for tables to be fully created...");
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Second pass: Add relationships between tables
-      console.log("Second pass: Adding relationships...");
+      // Second pass: Now add relationships between tables that were successfully created
+      console.log("Second pass: Adding relationships between tables...");
       for (const table of tablesData) {
         const relationships = table.relationships || [];
         if (relationships.length > 0) {
@@ -421,8 +415,46 @@ class SchemaGenerator {
       
       console.log(`Table ${name} creation response:`, data);
       
-      // Do NOT add foreign key constraints at this stage - those will be handled separately
-      // in the second pass of the generateSchemas method
+      // If we have foreign keys to add, do it in a separate step
+      if (foreignKeys.length > 0) {
+        console.log(`Adding ${foreignKeys.length} foreign key constraints for table ${name}`);
+        
+        for (const fk of foreignKeys) {
+          // Create a separate ALTER TABLE statement for each foreign key
+          const fkSql = `
+            -- Add foreign key constraint
+            DO $$
+            BEGIN
+              -- Make sure the referenced table exists before adding constraint
+              IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = '${fk.targetTable.toLowerCase()}'
+              ) THEN
+                -- Add the constraint
+                ALTER TABLE "${name}" 
+                ADD CONSTRAINT "fk_${name}_${fk.sourceColumn}" 
+                FOREIGN KEY ("${fk.sourceColumn}") 
+                REFERENCES "${fk.targetTable}" ("${fk.targetColumn}")
+                ON DELETE CASCADE;
+              ELSE
+                RAISE NOTICE 'Referenced table ${fk.targetTable} does not exist, skipping foreign key';
+              END IF;
+            EXCEPTION WHEN OTHERS THEN
+              RAISE NOTICE 'Error adding foreign key constraint: %', SQLERRM;
+            END $$;
+          `;
+          
+          // Execute the foreign key addition
+          const { data: fkData, error: fkError } = await this.supabase.rpc('execute_sql', { 
+            sql_query: fkSql 
+          });
+          
+          if (fkError) {
+            console.warn(`Warning: Could not add foreign key constraint:`, fkError);
+            // Don't fail the whole operation, just log the warning
+          }
+        }
+      }
       
       // Double-check if the table exists
       try {
