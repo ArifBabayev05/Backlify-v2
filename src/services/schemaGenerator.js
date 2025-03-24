@@ -294,16 +294,25 @@ class SchemaGenerator {
                   constraintText += ` DEFAULT ${pgValue}`;
                 } 
                 // Extract foreign key constraints for later processing
-                else if (constraint.toLowerCase().includes('foreign key')) {
-                  const fkMatch = constraint.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
-                  if (fkMatch) {
-                    const targetTable = fkMatch[1];
-                    const targetColumn = fkMatch[3] || 'id';
+                else if (constraint.toLowerCase().includes('references')) {
+                  // Extract the referenced table and column
+                  const refMatch = constraint.match(/references\s+([^\s(]+)(\(([^)]+)\))?/i);
+                  if (refMatch) {
+                    const targetTable = refMatch[1];
+                    const targetColumn = refMatch[3] || 'id';
+                    
+                    // Store for later processing, making sure we get the exact case sensitive table name
                     foreignKeys.push({
                       sourceColumn: col.name,
                       targetTable: targetTable,
                       targetColumn: targetColumn
                     });
+                    
+                    // Remove the references part from the constraint for now
+                    // We'll add proper foreign keys later
+                    constraintText += ` not null`;
+                  } else {
+                    constraintText += ` ${constraint}`;
                   }
                 }
                 // Handle normal constraints
@@ -325,16 +334,25 @@ class SchemaGenerator {
               constraintText += ` DEFAULT ${pgValue}`;
             }
             // Extract foreign key constraints for later processing
-            else if (constraintStr.toLowerCase().includes('foreign key')) {
-              const fkMatch = constraintStr.match(/foreign\s+key\s+references\s+([^\s(]+)(\(([^)]+)\))?/i);
-              if (fkMatch) {
-                const targetTable = fkMatch[1];
-                const targetColumn = fkMatch[3] || 'id';
+            else if (constraintStr.toLowerCase().includes('references')) {
+              // Extract the referenced table and column
+              const refMatch = constraintStr.match(/references\s+([^\s(]+)(\(([^)]+)\))?/i);
+              if (refMatch) {
+                const targetTable = refMatch[1];
+                const targetColumn = refMatch[3] || 'id';
+                
+                // Store for later processing, making sure we get the exact case sensitive table name
                 foreignKeys.push({
                   sourceColumn: col.name,
                   targetTable: targetTable,
                   targetColumn: targetColumn
                 });
+                
+                // Remove the references part from the constraint for now
+                // Just make it not null, we'll add the proper foreign key after table creation
+                constraintText += ` not null`;
+              } else {
+                constraintText += ` ${constraintStr}`;
               }
             }
             // Add other constraints
@@ -351,39 +369,19 @@ class SchemaGenerator {
       
       // Add timestamps if not already present
       if (!columns.find(col => col.name === 'created_at')) {
-        columnDefinitions.push('"created_at" timestamp with time zone DEFAULT now()');
+        columnDefinitions.push('"created_at" timestamp not null default now()');
       }
       if (!columns.find(col => col.name === 'updated_at')) {
-        columnDefinitions.push('"updated_at" timestamp with time zone DEFAULT now()');
+        columnDefinitions.push('"updated_at" timestamp not null default now()');
       }
       
       // Add XAuthUserId column if not present
       if (!columns.find(col => col.name === 'XAuthUserId')) {
-        columnDefinitions.push('"XAuthUserId" varchar(255) NOT NULL');
+        columnDefinitions.push('"XAuthUserId" varchar(255)');
       }
       
-      // Add foreign key constraints if any
-      const fkConstraints = foreignKeys.map(fk => {
-        // Extract table prefix from fullTableName
-        const tableNameParts = name.split('_');
-        const prefix = tableNameParts.slice(0, 2).join('_') + '_';
-        
-        // Make sure target table has proper prefix
-        let targetTable = fk.targetTable;
-        if (!targetTable.includes(prefix)) {
-          targetTable = prefix + targetTable;
-        }
-        
-        return `CONSTRAINT "fk_${fk.sourceColumn}_${targetTable}" FOREIGN KEY ("${fk.sourceColumn}") REFERENCES "${targetTable}" ("${fk.targetColumn}") ON DELETE CASCADE`;
-      });
-      
-      // Combine column definitions and foreign key constraints
-      const allDefinitions = [...columnDefinitions];
-      if (fkConstraints.length > 0) {
-        allDefinitions.push(...fkConstraints);
-      }
-      
-      sql += allDefinitions.join(',\n          ');
+      // Combine column definitions
+      sql += columnDefinitions.join(',\n          ');
       sql += `
         );
         
@@ -417,6 +415,62 @@ class SchemaGenerator {
       }
       
       console.log(`Table ${name} creation response:`, data);
+      
+      // Now that the table is created, add foreign key constraints separately
+      if (foreignKeys.length > 0) {
+        for (const fk of foreignKeys) {
+          // Extract table prefix from current table name
+          const tableNameParts = name.split('_');
+          const prefix = tableNameParts.slice(0, 2).join('_') + '_';
+          
+          // Make sure target table has proper prefix and case
+          let targetTable = fk.targetTable;
+          if (!targetTable.startsWith(prefix)) {
+            targetTable = prefix + targetTable;
+          }
+          
+          // Add the foreign key constraint with explicit quotation
+          const fkSql = `
+            DO $$
+            BEGIN
+              -- Make sure tables exist before adding constraint
+              IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = '${name.toLowerCase()}'
+              ) AND EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = '${targetTable.toLowerCase()}'
+              ) THEN
+                -- Add the foreign key constraint if it doesn't exist
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.table_constraints
+                  WHERE constraint_name = 'fk_${name}_${fk.sourceColumn}_${targetTable}'
+                ) THEN
+                  -- First ensure the referenced table has data to prevent constraint violations
+                  EXECUTE 'ALTER TABLE "${name}" 
+                  ADD CONSTRAINT "fk_${name}_${fk.sourceColumn}_${targetTable}" 
+                  FOREIGN KEY ("${fk.sourceColumn}") 
+                  REFERENCES "${targetTable}" ("${fk.targetColumn}") ON DELETE CASCADE';
+                END IF;
+              ELSE
+                RAISE NOTICE 'Tables not found for foreign key: ${name} -> ${targetTable}';
+              END IF;
+            END;
+            $$;
+          `;
+          
+          // Execute the foreign key addition
+          console.log(`Adding foreign key from ${name}.${fk.sourceColumn} to ${targetTable}.${fk.targetColumn}`);
+          const { data: fkData, error: fkError } = await this.supabase.rpc('execute_sql', { sql_query: fkSql });
+          
+          if (fkError) {
+            console.error(`Warning: Could not add foreign key constraint:`, fkError);
+            // Don't return error, continue with table creation
+          }
+        }
+      }
       
       // Double-check if the table exists
       try {
@@ -698,25 +752,33 @@ EXECUTE FUNCTION update_modified_column_${safeFunctionName}();
 DO $$
 BEGIN
     -- Ensure tables exist
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${sourceTable}') AND 
-       EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${targetTable}') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${sourceTable.toLowerCase()}') AND 
+       EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${targetTable.toLowerCase()}') THEN
        
         -- Check if the column exists
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                      WHERE table_name = '${sourceTable}' AND column_name = '${sourceColumn}') THEN
+                      WHERE table_name = '${sourceTable.toLowerCase()}' AND column_name = '${sourceColumn.toLowerCase()}') THEN
             -- Add the column if it doesn't exist
             EXECUTE 'ALTER TABLE "${sourceTable}" ADD COLUMN "${sourceColumn}" uuid NOT NULL';
         END IF;
         
         -- Add the foreign key constraint
         IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
-                      WHERE constraint_name = '${constraintName}') THEN
-            ALTER TABLE "${sourceTable}" 
-            ADD CONSTRAINT "${constraintName}" 
-            FOREIGN KEY ("${sourceColumn}") 
-            REFERENCES "${targetTable}" ("${targetColumn}") 
-            ON DELETE CASCADE;
+                      WHERE constraint_name = '${constraintName.toLowerCase()}') THEN
+            BEGIN
+                ALTER TABLE "${sourceTable}" 
+                ADD CONSTRAINT "${constraintName}" 
+                FOREIGN KEY ("${sourceColumn}") 
+                REFERENCES "${targetTable}" ("${targetColumn}") 
+                ON DELETE CASCADE;
+                
+                RAISE NOTICE 'Added foreign key constraint: ${constraintName}';
+            EXCEPTION WHEN others THEN
+                RAISE NOTICE 'Error adding foreign key constraint: %', SQLERRM;
+            END;
         END IF;
+    ELSE
+        RAISE NOTICE 'Tables not found. Source: % or Target: % does not exist', '${sourceTable}', '${targetTable}';
     END IF;
 END
 $$;

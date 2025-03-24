@@ -8,7 +8,7 @@ const schemaRoutes = require('./routes/schemaRoutes');
 const { ensureCorsHeaders, setCorsHeaders } = require('./middleware/corsMiddleware');
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
-
+const loggerMiddleware = require('./middleware/loggerMiddleware');
 // Load environment variables
 dotenv.config();
 
@@ -102,7 +102,7 @@ app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 
 // Apply custom CORS middleware for all routes
 app.use(ensureCorsHeaders);
-
+app.use(loggerMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -211,7 +211,197 @@ app.post('/auth/register', async (req, res) => {
     });
   }
 });
+// Add an endpoint to view logs
+app.get('/admin/logs', async (req, res) => {
+  setCorsHeaders(res);
+  
+  try {
+    // Create a Supabase client
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    // Get filter params
+    const { 
+      page = 1, 
+      limit = 50, 
+      user, 
+      endpoint, 
+      method,
+      status,
+      from_date,
+      to_date,
+      min_time,
+      max_time
+    } = req.query;
+    
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Build the query
+    let query = supabase
+      .from('api_logs')
+      .select('*', { count: 'exact' });
+    
+    // Apply filters if provided
+    if (user) {
+      query = query.eq('XAuthUserId', user);
+    }
+    
+    if (endpoint) {
+      query = query.ilike('endpoint', `%${endpoint}%`);
+    }
+    
+    if (method) {
+      query = query.eq('method', method.toUpperCase());
+    }
+    
+    if (status) {
+      // Extract status from the JSONB response field
+      query = query.eq('response->status', parseInt(status));
+    }
+    
+    if (from_date) {
+      query = query.gte('timestamp', from_date);
+    }
+    
+    if (to_date) {
+      query = query.lte('timestamp', to_date);
+    }
+    
+    if (min_time) {
+      query = query.gte('response_time_ms', parseInt(min_time));
+    }
+    
+    if (max_time) {
+      query = query.lte('response_time_ms', parseInt(max_time));
+    }
+    
+    // Apply pagination
+    query = query.order('timestamp', { ascending: false })
+      .range(offset, offset + parseInt(limit) - 1);
+    
+    // Execute the query
+    const { data: logs, error, count } = await query;
+    
+    if (error) {
+      return res.status(500).json({ 
+        error: 'Failed to retrieve logs', 
+        details: error.message 
+      });
+    }
+    
+    // Return the logs with pagination info
+    res.json({
+      logs,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / parseInt(limit))
+      },
+      filters: {
+        user,
+        endpoint,
+        method,
+        status,
+        from_date,
+        to_date,
+        min_time,
+        max_time
+      }
+    });
+  } catch (error) {
+    console.error('Error retrieving logs:', error);
+    res.status(500).json({ 
+      error: 'Failed to retrieve logs',
+      details: error.message
+    });
+  }
+});
 
+// Add an endpoint to get log statistics
+app.get('/admin/logs/stats', async (req, res) => {
+  setCorsHeaders(res);
+  
+  try {
+    // Create a Supabase client
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    // Get last 24 hours by default or use provided timespan
+    const { days = 1 } = req.query;
+    const daysAgo = new Date();
+    daysAgo.setDate(daysAgo.getDate() - parseInt(days));
+    
+    // Get statistics using the execute_sql function
+    const { data, error } = await supabase.rpc('execute_sql', {
+      sql_query: `
+        SELECT 
+          COUNT(*) as total_requests,
+          COUNT(DISTINCT "XAuthUserId") as unique_users,
+          AVG(response_time_ms) as avg_response_time,
+          MAX(response_time_ms) as max_response_time,
+          COUNT(CASE WHEN response->>'status' LIKE '2%' THEN 1 END) as success_count,
+          COUNT(CASE WHEN response->>'status' LIKE '4%' THEN 1 END) as client_error_count,
+          COUNT(CASE WHEN response->>'status' LIKE '5%' THEN 1 END) as server_error_count,
+          COUNT(CASE WHEN method = 'GET' THEN 1 END) as get_count,
+          COUNT(CASE WHEN method = 'POST' THEN 1 END) as post_count,
+          COUNT(CASE WHEN method = 'PUT' THEN 1 END) as put_count,
+          COUNT(CASE WHEN method = 'DELETE' THEN 1 END) as delete_count
+        FROM api_logs
+        WHERE timestamp >= '${daysAgo.toISOString()}'
+      `
+    });
+    
+    if (error) {
+      return res.status(500).json({ 
+        error: 'Failed to retrieve log statistics', 
+        details: error.message 
+      });
+    }
+    
+    // Get most used endpoints
+    const { data: topEndpoints, error: endpointsError } = await supabase.rpc('execute_sql', {
+      sql_query: `
+        SELECT 
+          endpoint,
+          COUNT(*) as request_count
+        FROM api_logs
+        WHERE timestamp >= '${daysAgo.toISOString()}'
+        GROUP BY endpoint
+        ORDER BY request_count DESC
+        LIMIT 10
+      `
+    });
+    
+    // Get most active users
+    const { data: topUsers, error: usersError } = await supabase.rpc('execute_sql', {
+      sql_query: `
+        SELECT 
+          "XAuthUserId",
+          COUNT(*) as request_count
+        FROM api_logs
+        WHERE timestamp >= '${daysAgo.toISOString()}'
+        GROUP BY "XAuthUserId"
+        ORDER BY request_count DESC
+        LIMIT 10
+      `
+    });
+    
+    // Return the statistics
+    res.json({
+      timespan: `${days} day(s)`,
+      start_date: daysAgo.toISOString(),
+      end_date: new Date().toISOString(),
+      general_stats: data,
+      top_endpoints: topEndpoints,
+      top_users: topUsers
+    });
+  } catch (error) {
+    console.error('Error retrieving log statistics:', error);
+    res.status(500).json({ 
+      error: 'Failed to retrieve log statistics',
+      details: error.message
+    });
+  }
+});
 // Authentication endpoint
 app.post('/auth/login', async (req, res) => {
   // Ensure CORS headers are set
