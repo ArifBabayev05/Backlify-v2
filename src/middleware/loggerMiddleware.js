@@ -9,12 +9,20 @@ const loggerMiddleware = async (req, res, next) => {
   const startTime = new Date();
   const requestTimestamp = startTime.toISOString();
   
-  const XAuthUserId = req.headers['x-user-id'] || 
+  // First check if XAuthUserId is already set on the request object (from previous middleware)
+  const XAuthUserId = req.XAuthUserId || 
+                       req.headers['x-user-id'] || 
                        req.headers['X-USER-ID'] || 
                        req.headers['X-User-Id'] || 
                        req.header('x-user-id') ||
+                       req.headers['xauthuserid'] ||
+                       req.headers['XAuthUserId'] ||
+                       req.header('xauthuserid') ||
                        (req.body ? req.body.XAuthUserId : null) ||
                        'ADMIN';
+  
+  // Also set XAuthUserId on the request for other middleware to use
+  req.XAuthUserId = XAuthUserId;
   
   // Check if this is a request to a specific API
   let apiId = null;
@@ -95,13 +103,16 @@ const loggerMiddleware = async (req, res, next) => {
       // Log to console first in case Supabase insert fails
       console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
-      // Skip logging for health checks to reduce database load
-      if (req.path === '/health' && res.statusCode === 200) {
+      const excludedPaths = ['/health', '/my-apis', '/'];
+
+      if (
+        (req.path === '/health' && res.statusCode === 200) ||
+        excludedPaths.includes(req.path) ||
+        req.path.startsWith('/admin/logs')
+      ) {
         return;
       }
-      if (req.path.startsWith('/admin/logs') || req.path === ('/')) {
-        return;
-      }
+
       
       // Log to Supabase
       await logToSupabase({

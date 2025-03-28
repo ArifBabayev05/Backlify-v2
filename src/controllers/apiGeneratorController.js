@@ -419,13 +419,28 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       console.log(`Modifying schema for prompt: "${prompt}" and user: ${XAuthUserId}`);
       console.log(`Existing tables: ${existingTables.length}`);
       
-      // Create a modification context to inform the AI about the existing schema
-      const tableDescriptions = existingTables.map(table => {
-        const columnDescriptions = table.columns.map(col => 
-          `${col.name} (${col.type}${col.constraints ? ' ' + col.constraints : ''})`
-        ).join(', ');
+      // Deep clone existing tables to ensure we don't mutate the originals
+      const clonedExistingTables = JSON.parse(JSON.stringify(existingTables));
+      
+      // Create a more structured description of the existing schema
+      const tableDescriptions = clonedExistingTables.map(table => {
+        const columnDescriptions = table.columns.map(col => {
+          const constraints = Array.isArray(col.constraints)
+            ? col.constraints.join(', ')
+            : (typeof col.constraints === 'string' ? col.constraints : '');
+          
+          return `${col.name} (${col.type}${constraints ? ' ' + constraints : ''})`;
+        }).join(', ');
         
-        return `- Table "${table.name}" with columns: ${columnDescriptions}`;
+        // Add relationship descriptions
+        let relationshipsDesc = '';
+        if (table.relationships && table.relationships.length > 0) {
+          relationshipsDesc = '\n      Relationships: ' + table.relationships.map(rel => {
+            return `${rel.type} to ${rel.targetTable} (${rel.sourceColumn} -> ${rel.targetColumn})`;
+          }).join(', ');
+        }
+        
+        return `- Table "${table.name}" with columns: ${columnDescriptions}${relationshipsDesc}`;
       }).join('\n');
       
       // Create an enhanced prompt including the existing schema
@@ -441,25 +456,94 @@ Please modify the existing schema based on the modification request. Return the 
       
       // Analyze enhanced prompt with Mistral AI
       console.log('Analyzing modification prompt with Mistral AI...');
-      const analysisResult = await mistralService.analyzeSchemaModification(enhancedPrompt, existingTables);
+      const analysisResult = await mistralService.analyzeSchemaModification(enhancedPrompt, clonedExistingTables);
       
       // Extract the modified schema
       console.log('Processing modified schema...');
       
       // If the AI service returns complete tables, use them directly
       if (analysisResult.tables && Array.isArray(analysisResult.tables) && analysisResult.tables.length > 0) {
-        // Ensure each table has the required properties
-        const processedTables = analysisResult.tables.map(table => {
-          return {
-            name: table.name,
-            originalName: table.originalName || table.name,
-            columns: table.columns || [],
-            relationships: table.relationships || []
+        // Ensure each table has the required properties and preserve original data where needed
+        const processedTables = analysisResult.tables.map(modifiedTable => {
+          // Find the original table if it exists
+          const originalTable = clonedExistingTables.find(t => t.name === modifiedTable.name);
+          
+          // Initialize normalized table with critical properties
+          const normalizedTable = {
+            name: modifiedTable.name,
+            originalName: modifiedTable.originalName || modifiedTable.name,
+            columns: modifiedTable.columns || [],
+            relationships: modifiedTable.relationships || []
           };
+          
+          // If we had a prefixed name in the original table, preserve it
+          if (originalTable && originalTable.prefixedName) {
+            normalizedTable.prefixedName = originalTable.prefixedName;
+          }
+          
+          // For each relationship, ensure proper format and references
+          if (normalizedTable.relationships && normalizedTable.relationships.length > 0) {
+            normalizedTable.relationships = normalizedTable.relationships.map(rel => {
+              // Find original relationship if exists
+              const matchingOriginalRel = originalTable ? 
+                (originalTable.relationships || []).find(origRel => 
+                  origRel.targetTable === rel.targetTable && 
+                  origRel.type === rel.type
+                ) : null;
+              
+              // Create normalized relationship
+              const normalizedRel = {
+                targetTable: rel.targetTable,
+                type: rel.type || 'many-to-one',  // Default to many-to-one if not specified
+                sourceColumn: rel.sourceColumn,
+                targetColumn: rel.targetColumn || 'id'  // Default to id for target column
+              };
+              
+              // If original relationship exists, fill in missing fields from it
+              if (matchingOriginalRel) {
+                normalizedRel.targetTable = normalizedRel.targetTable || matchingOriginalRel.targetTable;
+                normalizedRel.type = normalizedRel.type || matchingOriginalRel.type;
+                normalizedRel.sourceColumn = normalizedRel.sourceColumn || matchingOriginalRel.sourceColumn;
+                normalizedRel.targetColumn = normalizedRel.targetColumn || matchingOriginalRel.targetColumn;
+                
+                // Preserve original target table if it was prefixed
+                if (matchingOriginalRel.originalTargetTable) {
+                  normalizedRel.originalTargetTable = matchingOriginalRel.originalTargetTable;
+                }
+              }
+              
+              // Ensure source column exists - if not, derive it based on relationship type
+              if (!normalizedRel.sourceColumn) {
+                if (normalizedRel.type === 'many-to-one') {
+                  // For many-to-one, use targetTable_id as the column name
+                  const targetTableName = normalizedRel.targetTable.split('_').pop();
+                  normalizedRel.sourceColumn = `${targetTableName}_id`;
+                } else {
+                  // For one-to-many, use 'id' as the source column
+                  normalizedRel.sourceColumn = 'id';
+                }
+              }
+              
+              return normalizedRel;
+            });
+          }
+          
+          return normalizedTable;
+        });
+        
+        // Handle possible missing tables from the original schema that should be preserved
+        const modifiedTableNames = new Set(processedTables.map(table => table.name));
+        
+        // Add tables that exist in the original schema but not in the modified schema
+        clonedExistingTables.forEach(originalTable => {
+          if (!modifiedTableNames.has(originalTable.name)) {
+            console.log(`Table ${originalTable.name} from original schema not modified by AI, adding it back`);
+            processedTables.push({...originalTable});
+          }
         });
         
         console.log(`Modified schema contains ${processedTables.length} tables`);
-        return JSON.parse(JSON.stringify(processedTables));
+        return processedTables;
       }
       
       // Fallback: If the AI didn't return a complete schema, use schemaGenerator
@@ -469,14 +553,14 @@ Please modify the existing schema based on the modification request. Return the 
       // Check if we got valid tables back
       if (!processedTables || !Array.isArray(processedTables) || processedTables.length === 0) {
         console.warn('Failed to generate modified schema, returning original schema');
-        return JSON.parse(JSON.stringify(existingTables));
+        return clonedExistingTables;
       }
       
-      // Deep clone the tables to prevent any shared references
-      return JSON.parse(JSON.stringify(processedTables));
+      return processedTables;
     } catch (error) {
       console.error('Error modifying database schema:', error);
-      throw error;
+      // Return original tables as fallback in case of error
+      return existingTables;
     }
   }
   

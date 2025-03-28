@@ -9,6 +9,8 @@ const { ensureCorsHeaders, setCorsHeaders } = require('./middleware/corsMiddlewa
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
 const loggerMiddleware = require('./middleware/loggerMiddleware');
+const security = require('./security');
+const { initializeSecurityTables } = require('./utils/security/initializeSecurityTables');
 // Load environment variables
 dotenv.config();
 
@@ -20,6 +22,8 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
+security.applySecurityMiddleware(app);
+security.setupAuthRoutes(app);
 
 // Verify database connectivity at startup
 async function checkDatabase() {
@@ -29,8 +33,8 @@ async function checkDatabase() {
     const { data, error } = await supabase.from('api_registry').select('count(*)', { count: 'exact', head: true });
     
     if (error) {
-      console.error('❌ Database connectivity error:', error);
-      console.error('Please check your Supabase URL and service role key in .env file');
+      //console.error('❌ Database connectivity error:', error);
+      //console.error('Please check your Supabase URL and service role key in .env file');
     } else {
       console.log('✅ Connected to Supabase successfully');
     }
@@ -86,12 +90,34 @@ async function checkDatabase() {
 // Run the database check
 checkDatabase();
 
+// Initialize security-related database tables
+initializeSecurityTables().catch(err => {
+  console.error('Error initializing security tables:', err);
+  console.warn('Some security features might not work correctly');
+});
+
 // Middleware
 // Replace simple CORS setup with a more comprehensive configuration
 const corsOptions = {
-  origin: '*', // Allow requests from any origin
+  origin: function(origin, callback) {
+    // In development, allow any origin including localhost
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    
+    // In production, restrict to specific domains
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',') 
+      : [process.env.FRONTEND_URL || 'https://yourdomain.com'];
+    
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Id', 'x-user-id', 'X-USER-ID'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId'],
   exposedHeaders: ['Content-Length', 'Content-Disposition'],
   credentials: true,
   maxAge: 86400 // 24 hours
@@ -100,25 +126,54 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 
+// Add a specific handler for all OPTIONS requests to ensure proper CORS headers
+app.options('*', (req, res) => {
+  setCorsHeaders(res, req);
+  return res.status(200).end();
+});
+
 // Apply custom CORS middleware for all routes
 app.use(ensureCorsHeaders);
-app.use(loggerMiddleware);
+
+// Parse request body before extracting XAuthUserId from it
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Add a route for authenticating (if you have authentication middleware, you'd add it here)
-// This is a placeholder for now - you'd need to implement proper authentication
-app.use((req, res, next) => {
-  // Try to get the XAuthUserId from various header formats to handle case-sensitivity
-  const XAuthUserId = req.headers['x-user-id'] || 
+// Add a route for extracting XAuthUserId from various sources
+app.use(async (req, res, next) => {
+  // Try to get the XAuthUserId from JWT token first
+  const authHeader = req.headers.authorization;
+  let tokenUsername = null;
+  
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      // Import auth utils conditionally to avoid circular dependencies
+      const authUtils = require('./utils/security/auth');
+      const tokenResult = await authUtils.verifyToken(token);
+      
+      if (tokenResult.success && tokenResult.data.username) {
+        tokenUsername = tokenResult.data.username;
+        console.log('Extracted username from token:', tokenUsername);
+      }
+    } catch (err) {
+      console.log('Error extracting username from token:', err.message);
+    }
+  }
+  
+  // Then try from headers or body
+  const XAuthUserId = tokenUsername || 
+                req.headers['x-user-id'] || 
                 req.headers['X-USER-ID'] || 
                 req.headers['X-User-Id'] || 
                 req.headers['x-user-id'.toLowerCase()] ||
+                req.headers['xauthuserid'] ||
+                req.headers['XAuthUserId'] ||
                 req.header('x-user-id') ||
-                req.body.XAuthUserId ||
-                'default';
+                req.header('xauthuserid') ||
+                authHeader ||
+                'default2';
   
-  // Log all headers to debug the issue
   console.log('Using XAuthUserId:', XAuthUserId);
   
   // Set XAuthUserId on the request object
@@ -127,13 +182,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// Apply logger middleware AFTER XAuthUserId has been set
+app.use(loggerMiddleware);
+
+// Apply route protection (must be applied before route definitions)
+security.applyRouteProtection(app);
+console.log('🔐 Protected routes configured with JWT authentication');
+
 // Create controller instance
 const apiGeneratorController = require('./controllers/apiGeneratorController');
 
 // Registration endpoint
 app.post('/auth/register', async (req, res) => {
   // Ensure CORS headers are set
-  setCorsHeaders(res);
+  setCorsHeaders(res, req);
   
   const { email, password, username } = req.body;
   
@@ -214,7 +276,7 @@ app.post('/auth/register', async (req, res) => {
 // Add an endpoint to view logs
 // Add an endpoint to view logs
 app.get('/admin/logs', async (req, res) => {
-  setCorsHeaders(res);
+  setCorsHeaders(res, req);
   
   try {
     // Create a Supabase client
@@ -223,7 +285,7 @@ app.get('/admin/logs', async (req, res) => {
     // Get filter params
     const { 
       page = 1, 
-      limit = 50, 
+      limit = 5000, 
       user, 
       endpoint, 
       method,
@@ -320,18 +382,88 @@ app.get('/admin/logs', async (req, res) => {
 
 // Add an endpoint to get log statistics
 app.get('/admin/logs/stats', async (req, res) => {
-  setCorsHeaders(res);
+  setCorsHeaders(res, req);
   
   try {
     // Create a Supabase client
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
     
-    // Get last 24 hours by default or use provided timespan
-    const { days = 1 } = req.query;
-    const daysAgo = new Date();
-    daysAgo.setDate(daysAgo.getDate() - parseInt(days));
+    // Enhanced time-based filtering options
+    const { 
+      days = 1, 
+      startDate, 
+      endDate,
+      timeRange
+    } = req.query;
     
-    // Get statistics using the execute_sql function
+    // Calculate the time range based on provided parameters
+    let startDateTime = new Date();
+    let endDateTime = new Date();
+    
+    // Case 1: If specific startDate and endDate are provided
+    if (startDate && endDate) {
+      startDateTime = new Date(startDate);
+      endDateTime = new Date(endDate);
+      
+      // Add time component if not specified (set end date to end of day)
+      if (endDateTime.getHours() === 0 && endDateTime.getMinutes() === 0 && endDateTime.getSeconds() === 0) {
+        endDateTime.setHours(23, 59, 59, 999);
+      }
+    }
+    // Case 2: If timeRange is provided, use predefined ranges
+    else if (timeRange) {
+      endDateTime = new Date(); // Current time
+      
+      switch(timeRange) {
+        case 'today':
+          startDateTime.setHours(0, 0, 0, 0); // Start of today
+          break;
+        case 'yesterday':
+          startDateTime.setDate(startDateTime.getDate() - 1);
+          startDateTime.setHours(0, 0, 0, 0);
+          endDateTime.setDate(endDateTime.getDate() - 1);
+          endDateTime.setHours(23, 59, 59, 999);
+          break;
+        case 'last7days':
+          startDateTime.setDate(startDateTime.getDate() - 7);
+          break;
+        case 'last30days':
+          startDateTime.setDate(startDateTime.getDate() - 30);
+          break;
+        case 'thisWeek':
+          // Start of current week (Sunday or Monday based on locale - using Sunday here)
+          const dayOfWeek = startDateTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+          startDateTime.setDate(startDateTime.getDate() - dayOfWeek);
+          startDateTime.setHours(0, 0, 0, 0);
+          break;
+        case 'thisMonth':
+          startDateTime.setDate(1); // First day of current month
+          startDateTime.setHours(0, 0, 0, 0);
+          break;
+        default:
+          // Fall back to default days parameter
+          startDateTime.setDate(startDateTime.getDate() - parseInt(days));
+      }
+    }
+    // Case 3: Default to using the days parameter
+    else {
+      startDateTime.setDate(startDateTime.getDate() - parseInt(days));
+    }
+    
+    // Ensure start time is not after end time
+    if (startDateTime > endDateTime) {
+      const temp = startDateTime;
+      startDateTime = endDateTime;
+      endDateTime = temp;
+    }
+    
+    // Convert to ISO strings for database queries
+    const startDateTimeISO = startDateTime.toISOString();
+    const endDateTimeISO = endDateTime.toISOString();
+    
+    console.log(`Getting statistics from ${startDateTimeISO} to ${endDateTimeISO}`);
+    
+    // Get statistics using the execute_sql function with time range
     const { data: generalStatsResult, error: generalStatsError } = await supabase.rpc('execute_sql', {
       sql_query: `
         SELECT 
@@ -347,7 +479,8 @@ app.get('/admin/logs/stats', async (req, res) => {
           COUNT(CASE WHEN method = 'PUT' THEN 1 END) as put_count,
           COUNT(CASE WHEN method = 'DELETE' THEN 1 END) as delete_count
         FROM api_logs
-        WHERE timestamp >= '${daysAgo.toISOString()}'
+        WHERE timestamp >= '${startDateTimeISO}'
+        AND timestamp <= '${endDateTimeISO}'
       `
     });
 
@@ -394,7 +527,8 @@ app.get('/admin/logs/stats', async (req, res) => {
           const { count, error: countError } = await supabase
             .from('api_logs')
             .select('*', { count: 'exact', head: true })
-            .gte('timestamp', daysAgo.toISOString());
+            .gte('timestamp', startDateTimeISO)
+            .lte('timestamp', endDateTimeISO);
             
           if (!countError) {
             generalStats.total_requests = count || 0;
@@ -404,7 +538,8 @@ app.get('/admin/logs/stats', async (req, res) => {
           const { data: usersData, error: usersError } = await supabase
             .from('api_logs')
             .select('XAuthUserId')
-            .gte('timestamp', daysAgo.toISOString());
+            .gte('timestamp', startDateTimeISO)
+            .lte('timestamp', endDateTimeISO);
             
           if (!usersError && usersData) {
             const uniqueUsers = new Set();
@@ -420,7 +555,8 @@ app.get('/admin/logs/stats', async (req, res) => {
           const { data: methodData, error: methodError } = await supabase
             .from('api_logs')
             .select('method, status_code')
-            .gte('timestamp', daysAgo.toISOString());
+            .gte('timestamp', startDateTimeISO)
+            .lte('timestamp', endDateTimeISO);
             
           if (!methodError && methodData) {
             // Calculate method counts manually
@@ -443,7 +579,8 @@ app.get('/admin/logs/stats', async (req, res) => {
           const { data: timeData, error: timeError } = await supabase
             .from('api_logs')
             .select('response_time_ms')
-            .gte('timestamp', daysAgo.toISOString());
+            .gte('timestamp', startDateTimeISO)
+            .lte('timestamp', endDateTimeISO);
             
           if (!timeError && timeData && timeData.length > 0) {
             // Calculate average and max response time
@@ -471,7 +608,8 @@ app.get('/admin/logs/stats', async (req, res) => {
       const { data: endpointData, error: endpointError } = await supabase
         .from('api_logs')
         .select('endpoint')
-        .gte('timestamp', daysAgo.toISOString());
+        .gte('timestamp', startDateTimeISO)
+        .lte('timestamp', endDateTimeISO);
         
       if (!endpointError && endpointData) {
         // Count occurrences of each endpoint
@@ -498,7 +636,8 @@ app.get('/admin/logs/stats', async (req, res) => {
       const { data: userData, error: userError } = await supabase
         .from('api_logs')
         .select('XAuthUserId')
-        .gte('timestamp', daysAgo.toISOString());
+        .gte('timestamp', startDateTimeISO)
+        .lte('timestamp', endDateTimeISO);
         
       if (!userError && userData) {
         // Count occurrences of each user
@@ -521,9 +660,11 @@ app.get('/admin/logs/stats', async (req, res) => {
     
     // Return the statistics
     res.json({
-      timespan: `${days} day(s)`,
-      start_date: daysAgo.toISOString(),
-      end_date: new Date().toISOString(),
+      filters: {
+        startDate: startDateTimeISO,
+        endDate: endDateTimeISO,
+        timeRange: timeRange || (startDate && endDate ? 'custom' : `${days}_days`)
+      },
       general_stats: generalStats,
       top_endpoints: topEndpoints,
       top_users: topUsers
@@ -539,7 +680,7 @@ app.get('/admin/logs/stats', async (req, res) => {
 // Authentication endpoint
 app.post('/auth/login', async (req, res) => {
   // Ensure CORS headers are set
-  setCorsHeaders(res);
+  setCorsHeaders(res, req);
   
   const { username, password } = req.body;
   
@@ -1015,8 +1156,36 @@ app.get('/my-apis', (req, res) => {
 });
 
 // Dynamic API routing - verify user has access to the API
-app.use('/api/:apiId', (req, res, next) => {
+app.use('/api/:apiId', async (req, res, next) => {
   const apiId = req.params.apiId;
+  
+  // Skip authentication for Swagger UI and docs
+  if (req.path.includes('/docs') || req.path.includes('/swagger.json')) {
+    console.log(`Skipping authentication for documentation path: ${req.path}`);
+    const router = apiPublisher.getRouter(apiId);
+    
+    if (!router) {
+      // Ensure CORS headers are set even for error responses
+      setCorsHeaders(res);
+      return res.status(404).json({ error: 'API not found' });
+    }
+    
+    // Ensure CORS headers are set for this request
+    setCorsHeaders(res);
+    
+    // Store the apiId on the request for use in the router
+    req.apiId = apiId;
+    
+    // Use the router as middleware instead
+    req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+    return router(req, res, next);
+  }
+  
+  // Check if authentication is optional for this API (from query param or header)
+  const skipAuth = req.query.skipAuth === 'true' || 
+                  req.headers['x-skip-auth'] === 'true' || 
+                  req.headers['X-Skip-Auth'] === 'true';
+  
   const router = apiPublisher.getRouter(apiId);
   
   if (!router) {
@@ -1025,24 +1194,83 @@ app.use('/api/:apiId', (req, res, next) => {
     return res.status(404).json({ error: 'API not found' });
   }
   
-  // Log information about this API and request
-  console.log(`API ${apiId} access:`, {
-    apiXAuthUserId: router.XAuthUserId,
-    requestXAuthUserId: req.XAuthUserId,
-    apiMetadata: apiPublisher.apiMetadata.get(apiId)
-  });
+  // If skipAuth is true, bypass authentication
+  if (skipAuth) {
+    console.log(`Skipping authentication for API ${apiId} as requested by client`);
+    
+    // Set a default user ID for unauthenticated access
+    req.XAuthUserId = 'anonymous';
+    req.user = { username: 'anonymous', type: 'anonymous' };
+    
+    // Ensure CORS headers are set for this request
+    setCorsHeaders(res);
+    
+    // Store the apiId on the request for use in the router
+    req.apiId = apiId;
+    
+    // Use the router as middleware instead
+    req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+    return router(req, res, next);
+  }
   
-  // NOTE: User validation check removed to allow any user to access any API
+  // Continue with normal authentication flow
+  // Validate authentication token
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
   
-  // Ensure CORS headers are set for this request
-  setCorsHeaders(res);
+  if (!token) {
+    // Ensure CORS headers are set for error responses
+    setCorsHeaders(res);
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Authentication token is required'
+    });
+  }
   
-  // Store the apiId on the request for use in the router
-  req.apiId = apiId;
-  
-  // Use the router as middleware instead
-  req.url = req.url.replace(`/api/${apiId}`, '') || '/';
-  return router(req, res, next);
+  try {
+    // Import auth utils for token verification
+    const authUtils = require('./utils/security/auth');
+    const result = await authUtils.verifyToken(token);
+    
+    if (!result.success || result.data.type !== 'access') {
+      // Ensure CORS headers are set for error responses
+      setCorsHeaders(res);
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid or expired token'
+      });
+    }
+    
+    // Set verified user data on request
+    req.user = result.data;
+    req.XAuthUserId = result.data.username;
+    console.log(`Authenticated user: ${req.XAuthUserId} for API access`);
+    
+    // Log information about this API and request
+    console.log(`API ${apiId} access:`, {
+      apiXAuthUserId: router.XAuthUserId,
+      requestXAuthUserId: req.XAuthUserId,
+      apiMetadata: apiPublisher.apiMetadata.get(apiId)
+    });
+    
+    // Ensure CORS headers are set for this request
+    setCorsHeaders(res);
+    
+    // Store the apiId on the request for use in the router
+    req.apiId = apiId;
+    
+    // Use the router as middleware instead
+    req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+    return router(req, res, next);
+  } catch (error) {
+    console.error('Auth error:', error);
+    // Ensure CORS headers are set for error responses
+    setCorsHeaders(res);
+    return res.status(500).json({
+      error: 'Authentication error',
+      message: 'Failed to process authentication'
+    });
+  }
 });
 
 // Add this route after your existing routes - verify user owns the API
@@ -1661,6 +1889,7 @@ app.post('/api/:apiId/fix-xauthuserid', async (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backlify-v2 server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);

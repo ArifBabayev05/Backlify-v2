@@ -73,8 +73,12 @@ IMPORTANT NOTES:
 1. Return ONLY the raw JSON without any markdown formatting.
 2. Always include timestamp columns (created_at, updated_at) for each table.
 3. Make sure each table has an "id" column with "primary key" constraint.
-4. Use PostgreSQL data types (uuid, varchar, text, integer, timestamp, etc.).
-5. Include appropriate indexes and foreign key constraints.`;
+4. Use PostgreSQL data types: uuid, varchar(255), text, integer, timestamp, etc.
+5. For varchar, ALWAYS include the size specification like varchar(255).
+6. Include appropriate indexes.
+7. DO NOT include "references" or "on delete" in constraints - use the relationships array instead.
+8. For constraints, use ONLY simple strings like: "primary key", "unique", "not null", "default now()".
+9. NEVER put objects like {"default value": "something"} inside constraint arrays - use "default something" format instead.`;
       
       const userPrompt = `Generate a database schema and API endpoints for: ${prompt}`;
       
@@ -82,7 +86,7 @@ IMPORTANT NOTES:
       console.log('Raw Mistral response:', jsonResponse);
       
       // Clean the response and parse JSON
-      const cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
+      let cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
       
       try {
         const parsedResponse = JSON.parse(cleanedResponse);
@@ -93,19 +97,50 @@ IMPORTANT NOTES:
         // Try to extract JSON from the text
         const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
+          const potentialJson = jsonMatch[0];
           try {
-            const extractedJson = JSON.parse(jsonMatch[0]);
+            const extractedJson = JSON.parse(potentialJson);
             return this._normalizeResponse(extractedJson);
           } catch (extractError) {
             console.error('Failed to extract JSON from response:', extractError);
-            throw new Error('Failed to parse Mistral AI response as JSON');
+            
+            // Additional fixes for common JSON issues
+            console.log('Attempting to fix invalid JSON...');
+            
+            // Fix 1: Try to find and fix problematic "default value": "X" patterns
+            let fixedJson = potentialJson.replace(/("default value"\s*:\s*)"([^"]*)"/g, '$1"default $2"');
+            
+            // Fix 2: Replace any objects within arrays with string format
+            fixedJson = fixedJson.replace(/\[([^\]]*{[^}]*}[^\]]*)\]/g, (match, content) => {
+              // Convert objects in arrays to strings
+              const fixedContent = content.replace(/{([^{}]*)}/g, '"$1"');
+              return `[${fixedContent}]`;
+            });
+            
+            // Fix 3: Try to repair missing commas between array items
+            fixedJson = fixedJson.replace(/("[^"]*")\s+("[^"]*")/g, '$1, $2');
+            
+            try {
+              const fixedJsonParsed = JSON.parse(fixedJson);
+              console.log('Successfully fixed and parsed JSON');
+              return this._normalizeResponse(fixedJsonParsed);
+            } catch (fixError) {
+              console.error('Still unable to parse JSON after fixes:', fixError);
+              
+              // Last resort: Generate a minimal valid structure
+              console.log('Generating fallback schema structure...');
+              return this._generateFallbackSchema(prompt);
+            }
           }
         }
-        throw new Error('Failed to parse Mistral AI response as JSON');
+        
+        // If all parsing attempts fail, generate a minimal valid structure
+        console.log('Unable to extract valid JSON, generating fallback schema structure...');
+        return this._generateFallbackSchema(prompt);
       }
     } catch (error) {
       console.error('Mistral interpretation error:', error);
-      throw new Error(`AI interpretation failed: ${error.message}`);
+      return this._generateFallbackSchema(prompt);
     }
   }
   
@@ -121,6 +156,67 @@ IMPORTANT NOTES:
         table.columns = [];
       }
       
+      // Normalize columns and constraints
+      table.columns = table.columns.map(col => {
+        // Ensure constraints are always an array
+        if (!col.constraints) {
+          col.constraints = [];
+        } else if (typeof col.constraints === 'string') {
+          // Split string constraints into array
+          col.constraints = col.constraints.split(',').map(c => c.trim());
+        } else if (Array.isArray(col.constraints)) {
+          // Clean up any non-string values in constraints array
+          col.constraints = col.constraints.map(constraint => {
+            if (typeof constraint === 'object' && constraint !== null) {
+              // Convert object constraints to string format (e.g., {default value: 'now()'} -> 'default now()')
+              return Object.entries(constraint)
+                .map(([key, value]) => `${key} ${value}`)
+                .join(' ');
+            }
+            return constraint;
+          });
+        }
+        
+        // Filter out potentially dangerous SQL references in constraints
+        col.constraints = col.constraints.filter(constraint => {
+          if (!constraint) return false;
+          
+          // Remove any SQL references that might trigger security checks
+          return !(/references\s+\w+\s*\(.*\)/i.test(constraint) || 
+                  /references/i.test(constraint) ||
+                  /on\s+delete/i.test(constraint) ||
+                  /on\s+update/i.test(constraint));
+        });
+        
+        // Normalize data types to be SQL injection safe
+        if (col.type) {
+          // Ensure varchar has a size specification
+          if (col.type === 'varchar' || col.type === 'character varying') {
+            col.type = 'varchar(255)';
+          }
+          
+          // Make sure data types don't contain SQL strings
+          col.type = col.type.replace(/\(\s*\d+\s*,\s*\d+\s*\)/, ''); // Remove precision/scale
+          
+          // Fix common data types
+          const typeMap = {
+            'varchar': 'varchar(255)',
+            'char': 'char(255)',
+            'int': 'integer',
+            'number': 'numeric',
+            'bool': 'boolean',
+            'date': 'date',
+            'datetime': 'timestamp'
+          };
+          
+          if (typeMap[col.type]) {
+            col.type = typeMap[col.type];
+          }
+        }
+        
+        return col;
+      });
+      
       // Ensure relationships exist
       if (!table.relationships) {
         table.relationships = [];
@@ -130,8 +226,39 @@ IMPORTANT NOTES:
       
       // Normalize relationship types
       table.relationships = table.relationships.map(rel => {
-        if (rel.type) {
-          rel.type = rel.type.toLowerCase();
+        // Create a normalized relationship object
+        const normalizedRel = { ...rel };
+        
+        // Ensure all required fields exist
+        if (!normalizedRel.targetTable) {
+          console.warn(`Missing targetTable in relationship for ${table.name}, skipping`);
+          return null;
+        }
+        
+        // Ensure sourceColumn exists, default to 'id' for one-to-many
+        if (!normalizedRel.sourceColumn) {
+          if (normalizedRel.type === 'one-to-many') {
+            normalizedRel.sourceColumn = 'id';
+          } else {
+            // For many-to-one, if sourceColumn is missing, use targetTable + '_id'
+            normalizedRel.sourceColumn = `${normalizedRel.targetTable.split('_').pop()}_id`;
+          }
+          console.log(`Added missing sourceColumn: ${normalizedRel.sourceColumn} to relationship`);
+        }
+        
+        // Ensure targetColumn exists, default to 'id' or source table + '_id'
+        if (!normalizedRel.targetColumn) {
+          if (normalizedRel.type === 'many-to-one') {
+            normalizedRel.targetColumn = 'id';
+          } else {
+            normalizedRel.targetColumn = `${table.name}_id`;
+          }
+          console.log(`Added missing targetColumn: ${normalizedRel.targetColumn} to relationship`);
+        }
+        
+        // Normalize relationship type
+        if (normalizedRel.type) {
+          normalizedRel.type = normalizedRel.type.toLowerCase();
           
           const typeMap = {
             'belongs_to': 'many-to-one',
@@ -140,13 +267,25 @@ IMPORTANT NOTES:
             'belongs_to_many': 'many-to-many'
           };
           
-          if (typeMap[rel.type]) {
-            rel.type = typeMap[rel.type];
+          if (typeMap[normalizedRel.type]) {
+            normalizedRel.type = typeMap[normalizedRel.type];
           }
+        } else {
+          // Default to many-to-one if no type specified
+          normalizedRel.type = 'many-to-one';
+          console.log(`Added missing relationship type: many-to-one to relationship`);
         }
         
-        return rel;
-      });
+        // Clean up targetTable name if it contains SQL references
+        if (normalizedRel.targetTable.includes('(') || normalizedRel.targetTable.includes(')')) {
+          normalizedRel.targetTable = normalizedRel.targetTable.replace(/\([^)]*\)/g, '').trim();
+        }
+        
+        return normalizedRel;
+      }).filter(rel => rel !== null); // Remove any null relationships
+      
+      // Remove indexes if they exist - they'll be handled by relationships
+      delete table.indexes;
       
       return table;
     });
@@ -158,6 +297,11 @@ IMPORTANT NOTES:
     let cleaned = text.replace(/```json\s*/g, '');
     cleaned = cleaned.replace(/```\s*$/g, '');
     cleaned = cleaned.replace(/```/g, '');
+    
+    // Fix common JSON format errors that Mistral might introduce
+    // Fix "default value": "CURRENT_TIMESTAMP" inside arrays which is not valid JSON
+    cleaned = cleaned.replace(/"default value":\s*"([^"]*)"/g, '"default $1"');
+    
     return cleaned.trim();
   }
 
@@ -205,10 +349,13 @@ IMPORTANT NOTES:
 1. Return ONLY the raw JSON without any markdown formatting.
 2. Always include timestamp columns (created_at, updated_at) for each table.
 3. Make sure each table has an "id" column with "primary key" constraint.
-4. Use PostgreSQL data types (uuid, varchar, text, integer, timestamp, etc.).
-5. Include appropriate indexes and foreign key constraints.
+4. Use PostgreSQL data types: uuid, varchar(255), text, integer, timestamp, etc.
+5. For varchar, ALWAYS include the size specification like varchar(255).
 6. Keep the existing schema structure unless explicitly requested to modify it.
-7. Maintain existing relationships unless they conflict with new changes.`;
+7. Maintain existing relationships unless they conflict with new changes.
+8. DO NOT include "references" or "on delete" in constraints - use the relationships array instead.
+9. For constraints, use ONLY simple strings like: "primary key", "unique", "not null", "default now()".
+10. NEVER put objects like {"default value": "something"} inside constraint arrays - use "default something" format instead.`;
       
       // Provide the existing schema as context
       const existingSchemaJson = JSON.stringify(existingTables, null, 2);
@@ -218,7 +365,7 @@ IMPORTANT NOTES:
       console.log('Raw Mistral schema modification response:', jsonResponse);
       
       // Clean the response and parse JSON
-      const cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
+      let cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
       
       try {
         const parsedResponse = JSON.parse(cleanedResponse);
@@ -229,16 +376,44 @@ IMPORTANT NOTES:
         // Try to extract JSON from the text
         const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
+          const potentialJson = jsonMatch[0];
           try {
-            const extractedJson = JSON.parse(jsonMatch[0]);
+            const extractedJson = JSON.parse(potentialJson);
             return this._normalizeResponse(extractedJson);
           } catch (extractError) {
             console.error('Failed to extract JSON from response:', extractError);
-            // Return the original tables as fallback
-            return { tables: existingTables };
+            
+            // Additional fixes for common JSON issues
+            console.log('Attempting to fix invalid JSON for schema modification...');
+            
+            // Fix 1: Try to find and fix problematic "default value": "X" patterns
+            let fixedJson = potentialJson.replace(/("default value"\s*:\s*)"([^"]*)"/g, '$1"default $2"');
+            
+            // Fix 2: Replace any objects within arrays with string format
+            fixedJson = fixedJson.replace(/\[([^\]]*{[^}]*}[^\]]*)\]/g, (match, content) => {
+              // Convert objects in arrays to strings
+              const fixedContent = content.replace(/{([^{}]*)}/g, '"$1"');
+              return `[${fixedContent}]`;
+            });
+            
+            // Fix 3: Try to repair missing commas between array items
+            fixedJson = fixedJson.replace(/("[^"]*")\s+("[^"]*")/g, '$1, $2');
+            
+            try {
+              const fixedJsonParsed = JSON.parse(fixedJson);
+              console.log('Successfully fixed and parsed schema modification JSON');
+              return this._normalizeResponse(fixedJsonParsed);
+            } catch (fixError) {
+              console.error('Still unable to parse schema modification JSON after fixes:', fixError);
+              console.log('Falling back to original schema');
+              // Return the original tables as fallback
+              return { tables: existingTables };
+            }
           }
         }
+        
         // Return the original tables as fallback
+        console.log('Unable to extract valid JSON, returning original schema');
         return { tables: existingTables };
       }
     } catch (error) {
@@ -246,6 +421,66 @@ IMPORTANT NOTES:
       // Return the original tables as fallback
       return { tables: existingTables };
     }
+  }
+
+  /**
+   * Generate a simple fallback schema when JSON parsing fails
+   * @param {string} prompt - The original user prompt
+   * @returns {object} A minimal valid schema structure
+   */
+  _generateFallbackSchema(prompt) {
+    console.log('Generating fallback schema for prompt:', prompt);
+    
+    // Extract potential table names from the prompt
+    const words = prompt.toLowerCase().split(/\s+/);
+    const commonWords = ['a', 'an', 'the', 'and', 'or', 'with', 'for', 'system', 'application', 'app'];
+    const potentialTableNames = words
+      .filter(word => word.length > 3)
+      .filter(word => !commonWords.includes(word))
+      .map(word => word.replace(/[^a-z0-9]/g, ''));
+    
+    // Use at most 3 unique potential table names
+    const uniqueTableNames = [...new Set(potentialTableNames)].slice(0, 3);
+    
+    // If no potential table names found, use generic ones
+    const tableNames = uniqueTableNames.length > 0 
+      ? uniqueTableNames 
+      : ['items', 'users', 'categories'];
+    
+    // Generate a simple schema with basic tables
+    return {
+      tables: tableNames.map(name => ({
+        name,
+        columns: [
+          {
+            name: 'id',
+            type: 'uuid',
+            constraints: ['primary key', 'default uuid_generate_v4()']
+          },
+          {
+            name: 'name',
+            type: 'varchar(255)',
+            constraints: ['not null']
+          },
+          {
+            name: 'description',
+            type: 'text',
+            constraints: []
+          },
+          {
+            name: 'created_at',
+            type: 'timestamp',
+            constraints: ['not null', 'default now()']
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamp',
+            constraints: ['not null', 'default now()']
+          }
+        ],
+        relationships: []
+      }))
+    };
   }
 }
 

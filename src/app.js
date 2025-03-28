@@ -1,5 +1,31 @@
 const swaggerUi = require('swagger-ui-express');
 const apiGenerator = require('./services/apiGenerator');
+const express = require('express');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const bcrypt = require('bcrypt');
+const { createClient } = require('@supabase/supabase-js');
+
+// Load security modules
+const security = require('./security');
+
+// Load environment variables
+dotenv.config();
+
+// Initialize express app
+const app = express();
+
+// ========== IMPORTANT ==========
+// Apply security middleware - This MUST come before any other middleware
+// to ensure IP blacklisting works properly
+// ==============================
+security.applySecurityMiddleware(app);
+
+// Supabase client setup
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 // ... existing code ...
 
@@ -22,5 +48,8 @@ app.use('/api/:apiId/docs', (req, res, next) => {
   const swaggerUiHandler = swaggerUi.setup(swaggerSpec);
   swaggerUi.serve(req, res, next);
 }, swaggerUi.setup(null));
+
+// Setup secure authentication routes
+security.setupAuthRoutes(app);
 
 // ... rest of the existing app code ...

@@ -190,8 +190,17 @@ class APIGenerator {
             });
           }
           
+          // Filter out XAuthUserId from response data
+          const filteredData = data?.map(item => {
+            if (item) {
+              const { XAuthUserId, ...rest } = item;
+              return rest;
+            }
+            return item;
+          }) || [];
+          
           res.json({
-            data: data || [],
+            data: filteredData,
             pagination: {
               page: parseInt(page),
               limit: parseInt(limit),
@@ -228,6 +237,12 @@ class APIGenerator {
             return res.status(500).json({ error: `Database error: ${error.message}` });
           }
           
+          // Filter out XAuthUserId from response data
+          if (data) {
+            const { XAuthUserId, ...filteredData } = data;
+            return res.json(filteredData);
+          }
+          
           res.json(data);
         } catch (error) {
           console.error(`Error in GET ${tableName}/:id:`, error);
@@ -259,9 +274,12 @@ class APIGenerator {
           
           // Only add XAuthUserId if the column exists in the table
           if (hasXAuthUserIdColumn) {
-            // Use this API instance's XAuthUserId
-            requestData.XAuthUserId = router.XAuthUserId;
-            console.log(`Adding XAuthUserId: ${router.XAuthUserId} to request`);
+            // Always remove any client-provided XAuthUserId first
+            delete requestData.XAuthUserId;
+            
+            // Use this API instance's XAuthUserId or the authenticated user's ID
+            requestData.XAuthUserId = req.XAuthUserId || router.XAuthUserId;
+            console.log(`Adding XAuthUserId: ${requestData.XAuthUserId} to request`);
           } else {
             // Remove XAuthUserId if it was included but doesn't exist in the table
             if (requestData.XAuthUserId !== undefined) {
@@ -322,6 +340,12 @@ class APIGenerator {
             });
           }
           
+          // Filter out XAuthUserId from response
+          if (data && data[0]) {
+            const { XAuthUserId, ...filteredData } = data[0];
+            return res.status(201).json(filteredData);
+          }
+          
           res.status(201).json(data[0]);
         } catch (error) {
           console.error(`Error in POST ${tableName}:`, error);
@@ -362,9 +386,12 @@ class APIGenerator {
           
           // Only add XAuthUserId if the column exists in the table
           if (hasXAuthUserIdColumn) {
-            // Use this API instance's XAuthUserId
-            updateData.XAuthUserId = router.XAuthUserId;
-            console.log(`Adding XAuthUserId: ${router.XAuthUserId} to update data`);
+            // Always remove any client-provided XAuthUserId first
+            delete updateData.XAuthUserId;
+            
+            // Use this API instance's XAuthUserId or the authenticated user's ID
+            updateData.XAuthUserId = req.XAuthUserId || router.XAuthUserId;
+            console.log(`Adding XAuthUserId: ${updateData.XAuthUserId} to update data`);
           } else {
             // Remove XAuthUserId if it was included but doesn't exist in the table
             if (updateData.XAuthUserId !== undefined) {
@@ -372,6 +399,9 @@ class APIGenerator {
               delete updateData.XAuthUserId;
             }
           }
+          
+          // Always add updated_at timestamp
+          updateData.updated_at = new Date().toISOString();
           
           // Record exists, proceed with update
           const { data, error } = await supabase
@@ -383,6 +413,12 @@ class APIGenerator {
           if (error) {
             console.error(`Error updating record in ${prefixedTableName}:`, error);
             return res.status(500).json({ error: `Database error: ${error.message}` });
+          }
+          
+          // Filter out XAuthUserId from response
+          if (data && data[0]) {
+            const { XAuthUserId, ...filteredData } = data[0];
+            return res.json(filteredData);
           }
           
           res.json(data[0]);
@@ -513,6 +549,16 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
   // Build the paths from the schemas
   const paths = {};
   
+  // Define security scheme for JWT authentication
+  const securitySchemes = {
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'Enter your JWT token in the format: Bearer {token}'
+    }
+  };
+  
   // For each table, create swagger paths
   safeSchemas.forEach(schema => {
     // Safety check for schema
@@ -526,6 +572,7 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
       get: {
         tags: [tableName],
         summary: `Get all ${tableName} records`,
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'page',
@@ -553,12 +600,15 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
           }
         ],
         responses: {
-          '200': { description: 'Successful operation' }
+          '200': { description: 'Successful operation' },
+          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
+          '403': { description: 'Forbidden - You do not have permission to access this resource' }
         }
       },
       post: {
         tags: [tableName],
         summary: `Create a new ${tableName} record`,
+        security: [{ bearerAuth: [] }],
         requestBody: {
           content: {
             'application/json': {
@@ -566,10 +616,13 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
                 $ref: `#/components/schemas/${tableName}` 
               }
             }
-          }
+          },
+          description: 'XAuthUserId will be set automatically from your authentication token'
         },
         responses: {
-          '201': { description: 'Record created successfully' }
+          '201': { description: 'Record created successfully' },
+          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
+          '403': { description: 'Forbidden - You do not have permission to access this resource' }
         }
       }
     };
@@ -579,6 +632,7 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
       get: {
         tags: [tableName],
         summary: `Get a ${tableName} record by ID`,
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -589,12 +643,15 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
         ],
         responses: {
           '200': { description: 'Successful operation' },
+          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
+          '403': { description: 'Forbidden - You do not have permission to access this resource' },
           '404': { description: 'Record not found' }
         }
       },
       put: {
         tags: [tableName],
         summary: `Update a ${tableName} record`,
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -610,16 +667,20 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
                 $ref: `#/components/schemas/${tableName}` 
               }
             }
-          }
+          },
+          description: 'XAuthUserId will be set automatically from your authentication token'
         },
         responses: {
           '200': { description: 'Record updated successfully' },
+          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
+          '403': { description: 'Forbidden - You do not have permission to access this resource' },
           '404': { description: 'Record not found' }
         }
       },
       delete: {
         tags: [tableName],
         summary: `Delete a ${tableName} record`,
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -630,6 +691,8 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
         ],
         responses: {
           '204': { description: 'Record deleted successfully' },
+          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
+          '403': { description: 'Forbidden - You do not have permission to access this resource' },
           '404': { description: 'Record not found' }
         }
       }
@@ -659,6 +722,9 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
     schema.columns.forEach(col => {
       // Safety check for column
       if (!col || !col.name) return;
+      
+      // Skip XAuthUserId in the Swagger documentation
+      if (col.name === 'XAuthUserId') return;
       
       let type = 'string';
       let format = undefined;
@@ -782,7 +848,7 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
     info: {
       title: `API for User ${effectiveXAuthUserId}`,
       version: "1.0.0",
-      description: 'API generated by Backlify'
+      description: 'API generated by Backlify\n\n**Authentication Required**: All API endpoints require a valid JWT token in the Authorization header using the Bearer scheme.'
     },
     servers: [
       {
@@ -791,8 +857,14 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
     ],
     paths: paths || {},
     components: {
-      schemas: schemas || {}
-    }
+      schemas: schemas || {},
+      securitySchemes: securitySchemes
+    },
+    security: [
+      {
+        bearerAuth: []
+      }
+    ]
   };
 }
 
