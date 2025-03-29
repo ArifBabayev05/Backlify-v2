@@ -171,8 +171,11 @@ app.use(async (req, res, next) => {
                 req.headers['XAuthUserId'] ||
                 req.header('x-user-id') ||
                 req.header('xauthuserid') ||
-                authHeader ||
-                'default2';
+                (req.body && req.body.XAuthUserId) ||
+                'default';
+  
+  // Don't use full bearer token as fallback - it would expose sensitive information
+  // Instead use a default value
   
   console.log('Using XAuthUserId:', XAuthUserId);
   
@@ -471,7 +474,7 @@ app.get('/admin/logs/stats', async (req, res) => {
           COUNT(DISTINCT "XAuthUserId") as unique_users,
           AVG(response_time_ms) as avg_response_time,
           MAX(response_time_ms) as max_response_time,
-          COUNT(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 END) as success_count,
+          COUNT(CASE WHEN status_code >= 200 AND status_code < 300 OR status_code = 304 THEN 1 END) as success_count,
           COUNT(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 END) as client_error_count,
           COUNT(CASE WHEN status_code >= 500 THEN 1 END) as server_error_count,
           COUNT(CASE WHEN method = 'GET' THEN 1 END) as get_count,
@@ -569,7 +572,7 @@ app.get('/admin/logs/stats', async (req, res) => {
               
               // Count by status code
               const statusCode = log.status_code;
-              if (statusCode >= 200 && statusCode < 300) generalStats.success_count++;
+              if (statusCode >= 200 && statusCode < 300 || statusCode === 304) generalStats.success_count++;
               else if (statusCode >= 400 && statusCode < 500) generalStats.client_error_count++;
               else if (statusCode >= 500) generalStats.server_error_count++;
             });

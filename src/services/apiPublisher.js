@@ -60,6 +60,12 @@ class APIPublisher {
     }
   }
 
+  // Helper function to ensure consistent table naming
+  standardizeTableName(userId, apiId, tableName) {
+    // Always use lowercase for table names to avoid PostgreSQL case sensitivity issues
+    return `${userId}_${apiId}_${tableName}`.toLowerCase();
+  }
+
   publishAPI(router, metadata = {}) {
     const apiId = metadata.apiId || uuidv4();
     
@@ -293,7 +299,7 @@ class APIPublisher {
       }
       
       // Deep clone the tables to prevent any shared references
-      const safeTableSchemas = JSON.parse(JSON.stringify(metadata.tables));
+      let safeTableSchemas = JSON.parse(JSON.stringify(metadata.tables));
       
       // CRITICAL: Fix the prefixedName in each table schema to match the apiIdentifier
       // This ensures the router will access the same tables that were created
@@ -318,6 +324,27 @@ class APIPublisher {
       // Create a new Express router for this API - with the isolated schemas
       // Pass the apiIdentifier from metadata to ensure we use the same table names
       console.log(`Creating new router for API ${apiId} with apiIdentifier: ${apiIdentifier || 'new'}`);
+      
+      // Update table schemas to ensure consistent naming
+      if (safeTableSchemas && Array.isArray(safeTableSchemas)) {
+        safeTableSchemas = safeTableSchemas.map(schema => {
+          if (schema) {
+            // Extract the original table name (without prefixes)
+            const originalName = schema.originalName || 
+              (schema.name && schema.name.includes('_') ? 
+                schema.name.split('_').pop() : 
+                schema.name);
+                
+            // Ensure prefixedName uses correct standardized format
+            schema.prefixedName = this.standardizeTableName(XAuthUserId, apiIdentifier, originalName);
+            
+            // Keep track of the original name
+            schema.originalName = originalName;
+          }
+          return schema;
+        });
+      }
+      
       const regeneratedRouter = generateEndpoints(safeTableSchemas, XAuthUserId, apiIdentifier);
       
       // Log the API identifier being used for verification

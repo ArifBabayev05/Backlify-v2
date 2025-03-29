@@ -144,6 +144,8 @@ class APIGenerator {
         // Explicitly generate prefixed table name with BOTH XAuthUserId AND apiIdentifier
         // This ensures complete isolation even between APIs from the same user
         prefixedTableName = `${XAuthUserId}_${apiIdentifier}_${tableName}`;
+        // Convert to lowercase to avoid PostgreSQL case sensitivity issues
+        prefixedTableName = prefixedTableName.toLowerCase();
         // Store the prefixed name on the schema to ensure consistency
         schema.prefixedName = prefixedTableName;
         //console.log(`Generated new prefixedName: ${prefixedTableName}`);
@@ -160,6 +162,9 @@ class APIGenerator {
           
           // Build the query using a new Supabase client instance to avoid shared state
           const supabase = createClient(config.supabase.url, config.supabase.key);
+          
+          // Log the table name being accessed for debugging
+          console.log(`Table being accessed: "${prefixedTableName}"`);
           
           let query = supabase
             .from(prefixedTableName)
@@ -184,13 +189,69 @@ class APIGenerator {
           
           if (error) {
             console.error(`Error fetching ${prefixedTableName}:`, error);
+            
+            // Check if this is a table not found error
+            if (error.message && error.message.includes('does not exist')) {
+              console.log('Attempting to fix table name case sensitivity issue...');
+              
+              // Try with lowercase table name
+              const lowercaseTableName = prefixedTableName.toLowerCase();
+              if (lowercaseTableName !== prefixedTableName) {
+                console.log(`Retrying with lowercase table name: ${lowercaseTableName}`);
+                
+                // Retry the query with lowercase table name
+                let retryQuery = supabase
+                  .from(lowercaseTableName)
+                  .select('*', { count: 'exact' });
+                
+                // Re-apply filters
+                Object.entries(filters).forEach(([key, value]) => {
+                  retryQuery = retryQuery.eq(key, value);
+                });
+                
+                // Re-apply sorting
+                if (sort) {
+                  const orderDirection = order.toLowerCase() === 'desc' ? false : true;
+                  retryQuery = retryQuery.order(sort, { ascending: orderDirection });
+                }
+                
+                // Re-apply pagination
+                retryQuery = retryQuery.range(offset, offset + parseInt(limit) - 1);
+                
+                // Execute retry query
+                const retryResult = await retryQuery;
+                
+                if (!retryResult.error) {
+                  console.log('Retry with lowercase table name successful');
+                  
+                  // Update schema to use lowercase name for future requests
+                  schema.prefixedName = lowercaseTableName;
+                  
+                  return res.json({
+                    data: retryResult.data?.map(item => {
+                      if (item) {
+                        const { XAuthUserId, ...rest } = item;
+                        return rest;
+                      }
+                      return item;
+                    }) || [],
+                    pagination: {
+                      page: parseInt(page),
+                      limit: parseInt(limit),
+                      total: retryResult.count || 0
+                    }
+                  });
+                }
+              }
+            }
+            
             return res.status(500).json({ 
               error: `Database error: ${error.message}`,
               hint: 'Ensure the table exists and has the correct structure'
             });
           }
           
-          // Filter out XAuthUserId from response data
+          // Filter out XAuthUserId from response
           const filteredData = data?.map(item => {
             if (item) {
               const { XAuthUserId, ...rest } = item;
@@ -234,6 +295,40 @@ class APIGenerator {
               return res.status(404).json({ error: 'Record not found' });
             }
             console.error(`Error fetching ${prefixedTableName} by ID:`, error);
+            
+            // Check if this is a table not found error
+            if (error.message && error.message.includes('does not exist')) {
+              console.log('Attempting to fix table name case sensitivity issue...');
+              
+              // Try with lowercase table name
+              const lowercaseTableName = prefixedTableName.toLowerCase();
+              if (lowercaseTableName !== prefixedTableName) {
+                console.log(`Retrying with lowercase table name: ${lowercaseTableName}`);
+                
+                // Retry the query with lowercase table name
+                const retryResult = await supabase
+                  .from(lowercaseTableName)
+                  .select('*')
+                  .eq('id', req.params.id)
+                  .single();
+                
+                if (!retryResult.error) {
+                  console.log('Retry with lowercase table name successful');
+                  
+                  // Update schema to use lowercase name for future requests
+                  schema.prefixedName = lowercaseTableName;
+                  
+                  // Filter out XAuthUserId from response data
+                  if (retryResult.data) {
+                    const { XAuthUserId, ...filteredData } = retryResult.data;
+                    return res.json(filteredData);
+                  }
+                  
+                  return res.json(retryResult.data);
+                }
+              }
+            }
+            
             return res.status(500).json({ error: `Database error: ${error.message}` });
           }
           

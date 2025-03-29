@@ -101,7 +101,10 @@ const loggerMiddleware = async (req, res, next) => {
       };
       
       // Log to console first in case Supabase insert fails
-      console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
+      // Add color indicators for status codes: green for success (including 304), red for errors
+      const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
+      const statusIndicator = isSuccess ? '✓' : '✗';
+      console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
       const excludedPaths = ['/health', '/my-apis', '/'];
 
