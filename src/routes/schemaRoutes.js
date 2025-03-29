@@ -26,4 +26,4 @@ router.put('/api/:apiId/schema/tables/:tableName', schemaController.updateTable.
 // Remove a table from schema
 router.delete('/api/:apiId/schema/tables/:tableName', schemaController.removeTable.bind(schemaController));
 
-module.exports = router; 
+module.exports = router;
