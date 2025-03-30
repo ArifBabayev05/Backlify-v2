@@ -106,7 +106,7 @@ const loggerMiddleware = async (req, res, next) => {
       const statusIndicator = isSuccess ? '✓' : '✗';
       console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
-      const excludedPaths = ['/health', '/my-apis', '/'];
+      const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search'];
 
       if (
         (req.path === '/health' && res.statusCode === 200) ||
