@@ -43,9 +43,11 @@ class MistralService {
 
   async interpretPrompt(prompt) {
     try {
-      const systemPrompt = `You are a backend architect that converts natural language descriptions into database schemas and API endpoints. 
+      const systemPrompt = `You are a database schema expert that designs optimal PostgreSQL database schemas.
 
-Output should be in JSON format with the following structure: 
+Your task is to analyze the user's request and generate a complete database schema design in JSON format.
+
+Output must be in this JSON structure: 
 {
   "tables": [
     {
@@ -69,21 +71,51 @@ Output should be in JSON format with the following structure:
   ]
 }
 
-IMPORTANT NOTES:
+IMPORTANT RULES FOR SCHEMA DESIGN:
 1. Return ONLY the raw JSON without any markdown formatting.
 2. Always include timestamp columns (created_at, updated_at) for each table.
 3. Make sure each table has an "id" column with "primary key" constraint.
 4. Use PostgreSQL data types: uuid, varchar(255), text, integer, timestamp, etc.
 5. For varchar, ALWAYS include the size specification like varchar(255).
-6. Include appropriate indexes.
-7. DO NOT include "references" or "on delete" in constraints - use the relationships array instead.
-8. For constraints, use ONLY simple strings like: "primary key", "unique", "not null", "default now()".
-9. NEVER put objects like {"default value": "something"} inside constraint arrays - use "default something" format instead.`;
-      
-      const userPrompt = `Generate a database schema and API endpoints for: ${prompt}`;
-      
-      const jsonResponse = await this.generateCompletion(systemPrompt, userPrompt);
-      console.log('Raw Mistral response:', jsonResponse);
+6. DO NOT include "references" or "on delete" in constraints - use the relationships array instead.
+7. For constraints, use ONLY simple strings like: "primary key", "unique", "not null", "default now()".
+8. NEVER put objects like {"default value": "something"} inside constraint arrays - use "default something" format instead.
+
+RULES FOR HANDLING RELATIONSHIPS:
+1. For one-to-many relationships, the foreign key should be placed in the "many" side table.
+2. For many-to-many relationships, create a junction table with foreign keys to both related tables.
+3. When an entity can have multiple of something (addresses, contact details, etc.), place the foreign key in the child table.
+4. Always clearly identify the parent-child relationship in table naming.
+5. Use a consistent approach for polymorphic associations when needed (entity_type + entity_id pattern).
+
+RELATIONSHIP PATTERNS TO USE:
+1. One-to-Many: Add foreign key column in the "many" table pointing to the "one" table (e.g., user_id in posts table).
+2. Many-to-Many: Create a junction table (e.g., user_roles) with foreign keys to both tables.
+3. Multiple instances of same entity type (e.g., multiple addresses): Create a separate table with foreign key pointing back to owner.
+4. Polymorphic associations (when same table relates to multiple entity types): Use entity_type and entity_id columns.
+
+ALWAYS CHECK YOUR SCHEMA FOR:
+1. Missing foreign keys needed for relationships
+2. Proper handling of one-to-many and many-to-many relationships
+3. Correct targeting of foreign keys (they should be in the "child" tables)
+4. Consistency in naming patterns
+5. Proper handling of multiple instances of same entity type (addresses, contacts, etc.)`;
+
+      // Enhanced prompt with additional guide for multi-entity associations
+      let enhancedPrompt = prompt;
+      if (prompt.toLowerCase().includes('address') || 
+          prompt.toLowerCase().includes('contact') || 
+          prompt.toLowerCase().includes('multiple')) {
+        enhancedPrompt += `\n\nNote: If entities have multiple addresses or contact details, create separate tables for addresses and contacts with foreign keys pointing back to the main entity. For example, a 'users' table would have a one-to-many relationship with an 'addresses' table containing a user_id column.`;
+      }
+
+      if (prompt.toLowerCase().includes('teacher') && prompt.toLowerCase().includes('student')) {
+        enhancedPrompt += `\n\nNote: For related entities like teachers and students, clearly define the relationships between them. If multiple entities share common attributes (like addresses or contact details), consider using a polymorphic association pattern with entity_type and entity_id columns in the shared tables.`;
+      }
+
+      // Generate the completion with the enhanced prompt
+      const jsonResponse = await this.generateCompletion(systemPrompt, enhancedPrompt);
+      console.log('Raw Mistral schema generation response:', jsonResponse);
       
       // Clean the response and parse JSON
       let cleanedResponse = this._cleanMarkdownCodeBlocks(jsonResponse);
@@ -105,7 +137,7 @@ IMPORTANT NOTES:
             console.error('Failed to extract JSON from response:', extractError);
             
             // Additional fixes for common JSON issues
-            console.log('Attempting to fix invalid JSON...');
+            console.log('Attempting to fix invalid JSON for schema modification...');
             
             // Fix 1: Try to find and fix problematic "default value": "X" patterns
             let fixedJson = potentialJson.replace(/("default value"\s*:\s*)"([^"]*)"/g, '$1"default $2"');
@@ -122,25 +154,25 @@ IMPORTANT NOTES:
             
             try {
               const fixedJsonParsed = JSON.parse(fixedJson);
-              console.log('Successfully fixed and parsed JSON');
+              console.log('Successfully fixed and parsed schema modification JSON');
               return this._normalizeResponse(fixedJsonParsed);
             } catch (fixError) {
-              console.error('Still unable to parse JSON after fixes:', fixError);
-              
-              // Last resort: Generate a minimal valid structure
-              console.log('Generating fallback schema structure...');
-              return this._generateFallbackSchema(prompt);
+              console.error('Still unable to parse schema modification JSON after fixes:', fixError);
+              console.log('Falling back to original schema');
+              // Return the original tables as fallback
+              return { tables: existingTables };
             }
           }
         }
         
-        // If all parsing attempts fail, generate a minimal valid structure
-        console.log('Unable to extract valid JSON, generating fallback schema structure...');
-        return this._generateFallbackSchema(prompt);
+        // Return the original tables as fallback
+        console.log('Unable to extract valid JSON, returning original schema');
+        return { tables: existingTables };
       }
     } catch (error) {
-      console.error('Mistral interpretation error:', error);
-      return this._generateFallbackSchema(prompt);
+      console.error('Mistral schema modification error:', error);
+      // Return the original tables as fallback
+      return { tables: existingTables };
     }
   }
   

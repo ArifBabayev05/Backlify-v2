@@ -807,11 +807,38 @@ app.post('/generate-schema', (req, res) => {
           console.log(`- Table "${table.name}" with ${table.columns.length} columns`);
         });
         
+        // Collect relationship information for better user feedback
+        const relationshipInfo = validTables.reduce((acc, table) => {
+          if (table.relationships && table.relationships.length > 0) {
+            acc[table.name] = table.relationships.map(rel => ({
+              type: rel.type,
+              targetTable: rel.targetTable,
+              sourceColumn: rel.sourceColumn || `${rel.targetTable}_id`,
+              targetColumn: rel.targetColumn || 'id'
+            }));
+          }
+          return acc;
+        }, {});
+        
+        // Identify which tables might need special attention
+        const complexTables = validTables.filter(table => {
+          // Tables with entity references (likely for multiple instances)
+          return table.columns.some(col => 
+            col.name === 'entity_type' || col.name === 'entity_id'
+          );
+        }).map(table => table.name);
+        
         // Send back exactly the structure needed for create-api-from-schema
         res.json({
           success: true,
           XAuthUserId: XAuthUserIdToUse,
           tables: validTables, // Return only the validated tables with proper structure
+          metadata: {
+            relationships: relationshipInfo,
+            complexTables: complexTables,
+            tableCount: validTables.length,
+            totalColumns: validTables.reduce((sum, table) => sum + table.columns.length, 0)
+          }
         });
       })
       .catch(error => {

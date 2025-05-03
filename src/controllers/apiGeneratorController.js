@@ -341,7 +341,7 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
     }
   }
 
-  // Generate database schema from prompt - new method for separate endpoint
+  // Generate database schema from prompt - improved method for better handling of complex relationships
   async generateDatabaseSchema(prompt, XAuthUserId = 'default') {
     try {
       console.log(`Generating schema for prompt: "${prompt}" and user: ${XAuthUserId}`);
@@ -349,6 +349,10 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       // Analyze prompt with Mistral AI
       console.log('Analyzing prompt with Mistral AI...');
       const analysisResult = await mistralService.analyzeRequest(prompt);
+      
+      // Validate and enhance relationships
+      console.log('Validating and enhancing relationships...');
+      this._validateAndEnhanceRelationships(analysisResult.tables);
       
       // Generate database schema WITHOUT creating tables in Supabase
       console.log('Generating database schema without creating tables...');
@@ -377,27 +381,27 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
               {
                 name: "id",
                 type: "uuid",
-                constraints: "PRIMARY KEY DEFAULT uuid_generate_v4()"
+                constraints: ["PRIMARY KEY", "DEFAULT uuid_generate_v4()"]
               },
               {
                 name: "name",
                 type: "varchar(255)",
-                constraints: "NOT NULL"
+                constraints: ["NOT NULL"]
               },
               {
                 name: "description",
                 type: "text",
-                constraints: ""
+                constraints: []
               },
               {
                 name: "created_at",
                 type: "timestamp with time zone",
-                constraints: "DEFAULT now()"
+                constraints: ["DEFAULT now()"]
               },
               {
                 name: "updated_at",
                 type: "timestamp with time zone",
-                constraints: "DEFAULT now()"
+                constraints: ["DEFAULT now()"]
               }
             ],
             relationships: []
@@ -408,9 +412,168 @@ EXECUTE FUNCTION update_modified_column_${fullTableName}();
       // Deep clone the tables to prevent any shared references
       return JSON.parse(JSON.stringify(processedTables));
     } catch (error) {
-      console.error('Error generating database schema:', error);
+      console.error('Error generating database schema from prompt:', error);
       throw error;
     }
+  }
+  
+  // Helper method to validate and enhance relationships in the schema
+  _validateAndEnhanceRelationships(tables) {
+    if (!tables || !Array.isArray(tables)) return;
+    
+    // Step 1: Identify tables that might have multiple instances (addresses, contacts)
+    const addressTables = tables.filter(t => 
+      t.name && (
+        t.name.toLowerCase().includes('address') || 
+        t.name.toLowerCase().includes('location')
+      )
+    );
+    
+    const contactTables = tables.filter(t => 
+      t.name && (
+        t.name.toLowerCase().includes('contact') || 
+        t.name.toLowerCase().includes('phone') ||
+        t.name.toLowerCase().includes('email')
+      )
+    );
+    
+    // Step 2: Check if these tables have proper foreign keys to their parent entities
+    const entityTables = tables.filter(t => 
+      t.name && !(
+        t.name.toLowerCase().includes('address') ||
+        t.name.toLowerCase().includes('location') ||
+        t.name.toLowerCase().includes('contact') ||
+        t.name.toLowerCase().includes('phone') ||
+        t.name.toLowerCase().includes('email')
+      )
+    );
+    
+    // Step 3: Fix address tables if needed
+    addressTables.forEach(addressTable => {
+      const hasEntityReference = addressTable.columns && addressTable.columns.some(col => 
+        col.name && (
+          col.name.includes('_id') || 
+          col.name === 'entity_id'
+        )
+      );
+      
+      // If there's no entity reference, add a polymorphic association
+      if (!hasEntityReference && addressTable.columns) {
+        console.log(`Adding entity reference columns to ${addressTable.name}`);
+        
+        // Add entity_type and entity_id columns for polymorphic association
+        addressTable.columns.push({
+          name: "entity_type",
+          type: "varchar(50)",
+          constraints: ["NOT NULL"],
+          description: "Type of entity (e.g., teacher, student, employer)"
+        });
+        
+        addressTable.columns.push({
+          name: "entity_id",
+          type: "uuid",
+          constraints: ["NOT NULL"],
+          description: "ID of the entity this address belongs to"
+        });
+        
+        // Add an index for these columns
+        if (!addressTable.indexes) {
+          addressTable.indexes = [];
+        }
+        
+        addressTable.indexes.push({
+          name: `idx_${addressTable.name}_entity`,
+          columns: ["entity_type", "entity_id"]
+        });
+      }
+    });
+    
+    // Step 4: Fix contact tables if needed - similar approach
+    contactTables.forEach(contactTable => {
+      const hasEntityReference = contactTable.columns && contactTable.columns.some(col => 
+        col.name && (
+          col.name.includes('_id') || 
+          col.name === 'entity_id'
+        )
+      );
+      
+      // If there's no entity reference, add a polymorphic association
+      if (!hasEntityReference && contactTable.columns) {
+        console.log(`Adding entity reference columns to ${contactTable.name}`);
+        
+        // Add entity_type and entity_id columns for polymorphic association
+        contactTable.columns.push({
+          name: "entity_type",
+          type: "varchar(50)",
+          constraints: ["NOT NULL"],
+          description: "Type of entity (e.g., teacher, student, employer)"
+        });
+        
+        contactTable.columns.push({
+          name: "entity_id",
+          type: "uuid",
+          constraints: ["NOT NULL"],
+          description: "ID of the entity this contact belongs to"
+        });
+        
+        // Also add contact_type if it doesn't exist
+        const hasContactType = contactTable.columns.some(col => 
+          col.name && (
+            col.name === 'type' ||
+            col.name === 'contact_type'
+          )
+        );
+        
+        if (!hasContactType) {
+          contactTable.columns.push({
+            name: "contact_type",
+            type: "varchar(50)",
+            constraints: ["NOT NULL"],
+            description: "Type of contact (e.g., email, phone, etc.)"
+          });
+        }
+        
+        // Add an index for these columns
+        if (!contactTable.indexes) {
+          contactTable.indexes = [];
+        }
+        
+        contactTable.indexes.push({
+          name: `idx_${contactTable.name}_entity`,
+          columns: ["entity_type", "entity_id"]
+        });
+      }
+    });
+    
+    // Step 5: Ensure all relationships are properly defined
+    tables.forEach(table => {
+      if (table.relationships && Array.isArray(table.relationships)) {
+        // Validate each relationship
+        table.relationships.forEach(rel => {
+          // Ensure target table exists
+          const targetTable = tables.find(t => t.name === rel.targetTable);
+          if (!targetTable) {
+            console.warn(`Warning: Relationship target table ${rel.targetTable} not found`);
+          }
+          
+          // If this is a many-to-one relationship, ensure the foreign key column exists in this table
+          if (rel.type === 'many-to-one' || rel.type === 'many_to_one') {
+            const foreignKeyColumn = table.columns && table.columns.find(col => 
+              col.name === rel.sourceColumn || col.name === `${rel.targetTable}_id`
+            );
+            
+            if (!foreignKeyColumn && table.columns) {
+              console.log(`Adding missing foreign key ${rel.targetTable}_id to ${table.name}`);
+              table.columns.push({
+                name: `${rel.targetTable}_id`,
+                type: "uuid",
+                constraints: []
+              });
+            }
+          }
+        });
+      }
+    });
   }
   
   // Modify an existing database schema based on a prompt
