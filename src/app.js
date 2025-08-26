@@ -16,16 +16,7 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Configure CORS for all routes
-app.use(cors({
-  origin: '*',
-  methods: '*',
-  allowedHeaders: '*',
-  exposedHeaders: '*',
-  credentials: true
-}));
-
-// Apply custom CORS middleware to ensure headers are set in all cases
+// CORS middleware must be the very first middleware
 app.use(ensureCorsHeaders);
 
 // ========== IMPORTANT ==========
@@ -62,5 +53,11 @@ app.use('/api/:apiId/docs', (req, res, next) => {
 
 // Setup secure authentication routes
 security.setupAuthRoutes(app);
+
+// Add a global error handler to always set CORS headers
+app.use((err, req, res, next) => {
+  ensureCorsHeaders(req, res, () => {});
+  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+});
 
 // ... rest of the existing app code ...
