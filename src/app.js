@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
+const { ensureCorsHeaders } = require('./middleware/corsMiddleware');
 
 // Load security modules
 const security = require('./security');
@@ -15,8 +16,20 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
+// Configure CORS for all routes
+app.use(cors({
+  origin: '*',
+  methods: '*',
+  allowedHeaders: '*',
+  exposedHeaders: '*',
+  credentials: true
+}));
+
+// Apply custom CORS middleware to ensure headers are set in all cases
+app.use(ensureCorsHeaders);
+
 // ========== IMPORTANT ==========
-// Apply security middleware - This MUST come before any other middleware
+// Apply security middleware - This MUST come after CORS middleware
 // to ensure IP blacklisting works properly
 // ==============================
 security.applySecurityMiddleware(app);
@@ -26,8 +39,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
-
-// ... existing code ...
 
 // Add this route to serve Swagger UI for each API
 app.use('/api/:apiId/docs', (req, res, next) => {
