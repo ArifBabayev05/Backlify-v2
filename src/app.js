@@ -10,6 +10,9 @@ const { ensureCorsHeaders } = require('./middleware/corsMiddleware');
 // Load security modules
 const security = require('./security');
 
+// Load payment routes
+const paymentRoutes = require('./routes/paymentRoutes');
+
 // Load environment variables
 dotenv.config();
 
@@ -53,6 +56,9 @@ app.use('/api/:apiId/docs', (req, res, next) => {
 
 // Setup secure authentication routes
 security.setupAuthRoutes(app);
+
+// Setup payment routes
+app.use('/api/payment', paymentRoutes);
 
 // Add a global error handler to always set CORS headers
 app.use((err, req, res, next) => {

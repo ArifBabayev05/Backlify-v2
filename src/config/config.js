@@ -12,6 +12,34 @@ const config = {
   server: {
     port: process.env.PORT || 3000,
     env: process.env.NODE_ENV || 'development'
+  },
+  payment: {
+    epoint: {
+      privateKey: process.env.EPOINT_PRIVATE_KEY,
+      merchantId: process.env.EPOINT_MERCHANT_ID,
+      apiUrl: process.env.EPOINT_API_URL || 'https://api.epoint.az',
+      callbackUrl: process.env.EPOINT_CALLBACK_URL || '/api/epoint-callback'
+    },
+    plans: {
+      basic: {
+        name: 'Basic Plan',
+        price: 9.99,
+        currency: 'AZN',
+        features: ['Basic API access', '1000 requests/month', 'Email support']
+      },
+      pro: {
+        name: 'Pro Plan',
+        price: 19.99,
+        currency: 'AZN',
+        features: ['Pro API access', '10000 requests/month', 'Priority support', 'Custom domains']
+      },
+      enterprise: {
+        name: 'Enterprise Plan',
+        price: 49.99,
+        currency: 'AZN',
+        features: ['Enterprise API access', 'Unlimited requests', '24/7 support', 'Custom integrations', 'SLA guarantee']
+      }
+    }
   }
 };
 

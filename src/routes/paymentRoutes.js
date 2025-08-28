@@ -1,0 +1,76 @@
+const express = require('express');
+const PaymentController = require('../controllers/paymentController');
+const { setCorsHeaders } = require('../middleware/corsMiddleware');
+
+const router = express.Router();
+const paymentController = new PaymentController();
+
+// Apply CORS headers to all payment routes
+router.use((req, res, next) => {
+  setCorsHeaders(res, req);
+  next();
+});
+
+// Handle OPTIONS requests for CORS preflight
+router.options('*', (req, res) => {
+  setCorsHeaders(res, req);
+  res.status(200).json({ message: 'CORS preflight OK' });
+});
+
+/**
+ * @route GET /api/payment/plans
+ * @desc Get available payment plans
+ * @access Public
+ */
+router.get('/plans', paymentController.getPlans.bind(paymentController));
+
+/**
+ * @route POST /api/payment/order
+ * @desc Create a new payment order
+ * @access Private
+ */
+router.post('/order', paymentController.createOrder.bind(paymentController));
+
+/**
+ * @route GET /api/payment/history
+ * @desc Get user's payment history
+ * @access Private
+ */
+router.get('/history', paymentController.getPaymentHistory.bind(paymentController));
+
+/**
+ * @route GET /api/payment/subscription
+ * @desc Get user's active subscription
+ * @access Private
+ */
+router.get('/subscription', paymentController.getSubscription.bind(paymentController));
+
+/**
+ * @route GET /api/payment/check-subscription
+ * @desc Check if user has active subscription
+ * @access Private
+ */
+router.get('/check-subscription', paymentController.checkSubscription.bind(paymentController));
+
+/**
+ * @route POST /api/epoint-callback
+ * @desc Epoint payment callback endpoint
+ * @access Public (called by Epoint)
+ */
+router.post('/epoint-callback', paymentController.processEpointCallback.bind(paymentController));
+
+/**
+ * @route GET /api/payment/success
+ * @desc Payment success page
+ * @access Public
+ */
+router.get('/success', paymentController.paymentSuccess.bind(paymentController));
+
+/**
+ * @route GET /api/payment/cancel
+ * @desc Payment cancel page
+ * @access Public
+ */
+router.get('/cancel', paymentController.paymentCancel.bind(paymentController));
+
+module.exports = router;

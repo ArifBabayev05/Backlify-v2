@@ -1,17 +1,22 @@
 {
   "name": "backlify-v2",
   "version": "1.0.0",
-  "description": "Dynamic API generator using Mistral AI",
+  "description": "Dynamic API generator with integrated payment system using Mistral AI",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "setup-payment": "node src/tools/setup-payment-system.js",
+    "test-payment": "node src/tools/test-payment-endpoints.js"
   },
   "keywords": [
     "api",
     "generator",
     "mistral",
-    "supabase"
+    "supabase",
+    "payment",
+    "subscription",
+    "epoint"
   ],
   "author": "",
   "license": "ISC",
