@@ -1360,6 +1360,52 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Payment System Routes - PUBLIC ENDPOINTS (no authentication required)
+// These routes must be defined BEFORE the main API routing logic to bypass authentication
+const paymentRoutes = require('./routes/paymentRoutes');
+
+// Mount payment routes at /api/payment
+app.use('/api/payment', paymentRoutes);
+
+// Direct Epoint callback route for easier access
+app.post('/api/epoint-callback', (req, res) => {
+  const paymentController = require('./controllers/paymentController');
+  const controller = new paymentController();
+  controller.processEpointCallback(req, res);
+});
+
+// Payment system health check
+app.get('/api/payment/health', (req, res) => {
+  setCorsHeaders(res);
+  res.json({
+    success: true,
+    message: 'Payment system is healthy',
+    timestamp: new Date().toISOString(),
+    status: 'operational'
+  });
+});
+
+// Payment plans endpoint (public)
+app.get('/api/payment/plans', (req, res) => {
+  setCorsHeaders(res);
+  const PaymentService = require('./services/paymentService');
+  const paymentService = new PaymentService();
+  
+  try {
+    const plans = paymentService.getAvailablePlans();
+    res.json({
+      success: true,
+      data: plans
+    });
+  } catch (error) {
+    console.error('Error getting payment plans:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get payment plans'
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);

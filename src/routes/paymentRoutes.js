@@ -18,6 +18,13 @@ router.options('*', (req, res) => {
 });
 
 /**
+ * @route GET /api/payment/health
+ * @desc Health check for payment system
+ * @access Public
+ */
+router.get('/health', paymentController.healthCheck.bind(paymentController));
+
+/**
  * @route GET /api/payment/plans
  * @desc Get available payment plans
  * @access Public

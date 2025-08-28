@@ -7,7 +7,9 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "setup-payment": "node src/tools/setup-payment-system.js",
-    "test-payment": "node src/tools/test-payment-endpoints.js"
+    "test-payment": "node src/tools/test-payment-endpoints.js",
+    "test-public": "node src/tools/test-public-endpoints.js",
+    "test-public-simple": "node src/tools/test-public-endpoints-simple.js"
   },
   "keywords": [
     "api",
