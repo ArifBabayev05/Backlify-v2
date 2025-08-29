@@ -38,16 +38,21 @@ class APIGenerator {
     // Add in-memory database to the router (ensure it's a new Map instance)
     router.inMemoryDb = new Map();
 
-    // Add a CORS middleware to apply headers for all routes in this router
+    // UNIVERSAL CORS middleware - applies to ALL routes in this router
     router.use((req, res, next) => {
-      setCorsHeaders(res);
+      const { setCorsHeaders } = require('../middleware/corsMiddleware');
+      setCorsHeaders(res, req);
       next();
     });
 
-    // Handle OPTIONS requests at the router level
+    // Handle ALL OPTIONS requests immediately for CORS preflight
     router.options('*', (req, res) => {
-      setCorsHeaders(res);
-      res.status(200).end();
+      const { setCorsHeaders } = require('../middleware/corsMiddleware');
+      setCorsHeaders(res, req);
+      res.status(200).json({ 
+        message: 'CORS preflight OK for dynamic API',
+        timestamp: new Date().toISOString()
+      });
     });
 
     // Store original table schemas to prevent modification

@@ -1,6 +1,7 @@
 const express = require('express');
 const PaymentController = require('../controllers/paymentController');
 const { setCorsHeaders } = require('../middleware/corsMiddleware');
+const { publicRoute, protectedRoute } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 const paymentController = new PaymentController();
@@ -18,66 +19,59 @@ router.options('*', (req, res) => {
 });
 
 /**
- * @route GET /api/payment/health
- * @desc Health check for payment system
- * @access Public
- */
-router.get('/health', paymentController.healthCheck.bind(paymentController));
-
-/**
  * @route GET /api/payment/plans
  * @desc Get available payment plans
- * @access Public
+ * @access Public - No authentication required
  */
-router.get('/plans', paymentController.getPlans.bind(paymentController));
+router.get('/plans', publicRoute(), paymentController.getPlans.bind(paymentController));
 
 /**
  * @route POST /api/payment/order
  * @desc Create a new payment order
- * @access Private
+ * @access Private - Authentication required
  */
-router.post('/order', paymentController.createOrder.bind(paymentController));
+router.post('/order', protectedRoute(), paymentController.createOrder.bind(paymentController));
 
 /**
  * @route GET /api/payment/history
  * @desc Get user's payment history
- * @access Private
+ * @access Private - Authentication required
  */
-router.get('/history', paymentController.getPaymentHistory.bind(paymentController));
+router.get('/history', protectedRoute(), paymentController.getPaymentHistory.bind(paymentController));
 
 /**
  * @route GET /api/payment/subscription
  * @desc Get user's active subscription
- * @access Private
+ * @access Private - Authentication required
  */
-router.get('/subscription', paymentController.getSubscription.bind(paymentController));
+router.get('/subscription', protectedRoute(), paymentController.getSubscription.bind(paymentController));
 
 /**
  * @route GET /api/payment/check-subscription
  * @desc Check if user has active subscription
- * @access Private
+ * @access Private - Authentication required
  */
-router.get('/check-subscription', paymentController.checkSubscription.bind(paymentController));
+router.get('/check-subscription', protectedRoute(), paymentController.checkSubscription.bind(paymentController));
 
 /**
  * @route POST /api/epoint-callback
  * @desc Epoint payment callback endpoint
- * @access Public (called by Epoint)
+ * @access Public - No authentication required (called by Epoint)
  */
-router.post('/epoint-callback', paymentController.processEpointCallback.bind(paymentController));
+router.post('/epoint-callback', publicRoute(), paymentController.processEpointCallback.bind(paymentController));
 
 /**
  * @route GET /api/payment/success
  * @desc Payment success page
- * @access Public
+ * @access Public - No authentication required
  */
-router.get('/success', paymentController.paymentSuccess.bind(paymentController));
+router.get('/success', publicRoute(), paymentController.paymentSuccess.bind(paymentController));
 
 /**
  * @route GET /api/payment/cancel
  * @desc Payment cancel page
- * @access Public
+ * @access Public - No authentication required
  */
-router.get('/cancel', paymentController.paymentCancel.bind(paymentController));
+router.get('/cancel', publicRoute(), paymentController.paymentCancel.bind(paymentController));
 
 module.exports = router;

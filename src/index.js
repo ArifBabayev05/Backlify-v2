@@ -96,35 +96,37 @@ initializeSecurityTables().catch(err => {
   console.warn('Some security features might not work correctly');
 });
 
-// Middleware
-// Replace simple CORS setup with a more comprehensive configuration
-const corsOptions = {
-  origin: function(origin, callback) {
-    // In development, allow any origin including localhost
-    if (process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-    
-    // In production, restrict to specific domains
-    const allowedOrigins = process.env.ALLOWED_ORIGINS 
-      ? process.env.ALLOWED_ORIGINS.split(',') 
-      : [process.env.FRONTEND_URL || 'https://yourdomain.com'];
-    
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId'],
-  exposedHeaders: ['Content-Length', 'Content-Disposition'],
-  credentials: true,
-  maxAge: 86400 // 24 hours
+// ========== UNIVERSAL CORS CONFIGURATION ==========
+// This allows ALL origins, methods, and headers to prevent ANY CORS errors
+const universalCorsOptions = {
+  origin: true, // Allow ALL origins (equivalent to '*' but supports credentials)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    // Standard headers
+    'Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization',
+    // Custom authentication headers
+    'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId', 'x-skip-auth',
+    // API headers
+    'X-API-Key', 'x-api-key', 'X-API-Version', 'X-Request-ID', 'X-Client-Version', 'X-Platform',
+    // Payment headers
+    'X-Payment-Token', 'X-Order-Id', 'X-Transaction-Id', 'X-Signature', 'X-Callback-Url', 'X-Plan-Id', 'x-plan-id',
+    // Additional common headers
+    'Cache-Control', 'Pragma', 'Expires', 'If-Modified-Since', 'If-None-Match', 'X-CSRF-Token', 'X-Forwarded-For',
+    // Allow any custom header starting with X-
+    'X-*'
+  ],
+  exposedHeaders: [
+    'Content-Length', 'Content-Disposition', 'Content-Type', 'Date', 'ETag', 'Last-Modified',
+    'X-Total-Count', 'X-Page-Count', 'X-Current-Page', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'
+  ],
+  credentials: true, // Allow cookies and authentication
+  maxAge: 86400, // Cache preflight for 24 hours
+  preflightContinue: false, // Pass control to next handler
+  optionsSuccessStatus: 200 // Success status for preflight
 };
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+app.use(cors(universalCorsOptions));
+app.options('*', cors(universalCorsOptions)); // Handle ALL preflight requests
 
 // Add a specific handler for all OPTIONS requests to ensure proper CORS headers
 app.options('*', (req, res) => {
@@ -1189,6 +1191,11 @@ app.get('/my-apis', (req, res) => {
 app.use('/api/:apiId', async (req, res, next) => {
   const apiId = req.params.apiId;
   
+  // Skip this middleware for payment routes and health checks
+  if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback') {
+    return next();
+  }
+  
   // Skip authentication for Swagger UI and docs
   if (req.path.includes('/docs') || req.path.includes('/swagger.json')) {
     console.log(`Skipping authentication for documentation path: ${req.path}`);
@@ -1360,64 +1367,29 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Payment System Routes - PUBLIC ENDPOINTS (no authentication required)
-// These routes must be defined BEFORE the main API routing logic to bypass authentication
-const paymentRoutes = require('./routes/paymentRoutes');
-
-// Mount payment routes at /api/payment
-app.use('/api/payment', paymentRoutes);
-
-// Direct Epoint callback route for easier access
-app.post('/api/epoint-callback', (req, res) => {
-  const paymentController = require('./controllers/paymentController');
-  const controller = new paymentController();
-  controller.processEpointCallback(req, res);
-});
-
-// Payment system health check
-app.get('/api/payment/health', (req, res) => {
-  setCorsHeaders(res);
-  res.json({
-    success: true,
-    message: 'Payment system is healthy',
-    timestamp: new Date().toISOString(),
-    status: 'operational'
-  });
-});
-
-// Payment plans endpoint (public)
-app.get('/api/payment/plans', (req, res) => {
-  setCorsHeaders(res);
-  const PaymentService = require('./services/paymentService');
-  const paymentService = new PaymentService();
-  
-  try {
-    const plans = paymentService.getAvailablePlans();
-    res.json({
-      success: true,
-      data: plans
-    });
-  } catch (error) {
-    console.error('Error getting payment plans:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get payment plans'
-    });
-  }
-});
-
-// Error handling middleware
+// UNIVERSAL Error handling middleware with COMPREHENSIVE CORS
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Global error handler:', err.stack);
   
-  // Ensure CORS headers are set even for error responses
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-User-Id, x-user-id, X-USER-ID');
+  // Apply UNIVERSAL CORS headers to ALL error responses
+  setCorsHeaders(res, req);
   
-  res.status(500).json({
+  // Additional safety measures for error responses
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
+  res.header('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 
+    'Accept, Authorization, Content-Type, X-Requested-With, X-User-Id, x-user-id, X-USER-ID, xauthuserid, XAuthUserId, x-skip-auth, X-API-Key');
+  
+  // Remove headers that might block CORS
+  res.removeHeader('X-Frame-Options');
+  res.removeHeader('X-Content-Type-Options');
+  
+  res.status(err.status || 500).json({
     error: 'Something went wrong!',
-    message: err.message
+    message: err.message || 'Internal server error',
+    cors: 'ENABLED',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -1627,6 +1599,31 @@ app.get('/debug/api/:apiId', (req, res) => {
 
 // Add schema management routes
 app.use('/', schemaRoutes);
+
+// Add payment routes with flexible authentication
+const paymentRoutes = require('./routes/paymentRoutes');
+app.use('/api/payment', paymentRoutes);
+
+// Add direct Epoint callback route (public access)
+const PaymentController = require('./controllers/paymentController');
+const paymentController = new PaymentController();
+app.post('/api/epoint-callback', async (req, res) => {
+  setCorsHeaders(res, req);
+  return paymentController.processEpointCallback(req, res);
+});
+
+// Add health check endpoint (public access)
+app.get('/health', (req, res) => {
+  setCorsHeaders(res, req);
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: {
+      payment: 'operational',
+      database: 'connected'
+    }
+  });
+});
 
 // Load all APIs from registry on startup
 (async () => {

@@ -41,35 +41,32 @@ const applySecurityMiddleware = (app) => {
   securityHeaders(app);
   console.log('✅ Security headers enabled');
   
-  // Configure CORS with secure settings
-  const corsOptions = {
-    origin: function(origin, callback) {
-      // In development mode, allow all origins
-      if (process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      
-      // In production, restrict to allowed origins
-      const allowedOrigins = process.env.ALLOWED_ORIGINS 
-        ? process.env.ALLOWED_ORIGINS.split(',') 
-        : securityConfig.headers.corsAllowedOrigins;
-      
-      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId'],
-    exposedHeaders: ['Content-Length'],
-    credentials: true,
-    maxAge: 86400 // 24 hours
+  // UNIVERSAL CORS configuration - NO restrictions, NO CORS errors
+  const universalCorsOptions = {
+    origin: true, // Accept ALL origins (works with credentials)
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD', 'TRACE', 'CONNECT'],
+    allowedHeaders: [
+      // Standard and custom headers - cover ALL possibilities
+      'Accept', 'Accept-Encoding', 'Accept-Language', 'Authorization', 'Cache-Control', 'Connection',
+      'Content-Length', 'Content-Type', 'Cookie', 'DNT', 'Date', 'Expect', 'Host', 'Keep-Alive',
+      'Origin', 'Pragma', 'Referer', 'User-Agent', 'X-Requested-With', 'X-CSRF-Token', 'X-Forwarded-For',
+      'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId', 'x-skip-auth',
+      'X-API-Key', 'x-api-key', 'X-API-Version', 'X-Request-ID', 'X-Client-Version', 'X-Platform',
+      'X-Payment-Token', 'X-Order-Id', 'X-Transaction-Id', 'X-Signature', 'X-Callback-Url'
+    ],
+    exposedHeaders: [
+      'Content-Length', 'Content-Type', 'Content-Disposition', 'Date', 'ETag', 'Last-Modified',
+      'X-Total-Count', 'X-Page-Count', 'X-Current-Page', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'
+    ],
+    credentials: true, // Support authentication
+    maxAge: 86400, // 24 hour cache
+    preflightContinue: false,
+    optionsSuccessStatus: 200
   };
   
-  app.use(cors(corsOptions));
-  app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
-  console.log('✅ CORS protection configured');
+  app.use(cors(universalCorsOptions));
+  app.options('*', cors(universalCorsOptions)); // Handle ALL preflight requests
+  console.log('✅ UNIVERSAL CORS enabled - ALL origins, methods, and headers allowed');
   
   // Add request size limits for DoS protection
   app.use(express.json({ 

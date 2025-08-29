@@ -7,7 +7,7 @@ class PaymentController {
   }
 
   /**
-   * Get available payment plans - PUBLIC ENDPOINT (no auth required)
+   * Get available payment plans
    */
   async getPlans(req, res) {
     try {
@@ -28,7 +28,7 @@ class PaymentController {
   }
 
   /**
-   * Create payment order - PRIVATE ENDPOINT (auth required)
+   * Create payment order
    */
   async createOrder(req, res) {
     try {
@@ -71,7 +71,7 @@ class PaymentController {
   }
 
   /**
-   * Get user's payment history - PRIVATE ENDPOINT (auth required)
+   * Get user's payment history
    */
   async getPaymentHistory(req, res) {
     try {
@@ -102,7 +102,7 @@ class PaymentController {
   }
 
   /**
-   * Get user's active subscription - PRIVATE ENDPOINT (auth required)
+   * Get user's active subscription
    */
   async getSubscription(req, res) {
     try {
@@ -134,7 +134,7 @@ class PaymentController {
   }
 
   /**
-   * Check subscription status - PRIVATE ENDPOINT (auth required)
+   * Check subscription status
    */
   async checkSubscription(req, res) {
     try {
@@ -168,7 +168,7 @@ class PaymentController {
   }
 
   /**
-   * Process Epoint callback - PUBLIC ENDPOINT (called by Epoint)
+   * Process Epoint callback
    */
   async processEpointCallback(req, res) {
     try {
@@ -206,7 +206,7 @@ class PaymentController {
   }
 
   /**
-   * Payment success page redirect - PUBLIC ENDPOINT (no auth required)
+   * Payment success page redirect
    */
   async paymentSuccess(req, res) {
     try {
@@ -237,7 +237,7 @@ class PaymentController {
   }
 
   /**
-   * Payment cancel page redirect - PUBLIC ENDPOINT (no auth required)
+   * Payment cancel page redirect
    */
   async paymentCancel(req, res) {
     try {
@@ -256,28 +256,6 @@ class PaymentController {
       res.status(500).json({
         success: false,
         error: 'Failed to process payment cancel'
-      });
-    }
-  }
-
-  /**
-   * Health check endpoint - PUBLIC ENDPOINT (no auth required)
-   */
-  async healthCheck(req, res) {
-    try {
-      setCorsHeaders(res, req);
-      
-      res.json({
-        success: true,
-        message: 'Payment system is healthy',
-        timestamp: new Date().toISOString(),
-        status: 'operational'
-      });
-    } catch (error) {
-      console.error('Health check error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Payment system health check failed'
       });
     }
   }
