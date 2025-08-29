@@ -7,12 +7,14 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "setup-payment": "node src/tools/setup-payment-system.js",
+    "setup-google-auth": "node src/tools/setup-google-auth.js",
     "test-payment": "node src/tools/test-payment-endpoints.js",
     "test-routes": "node src/tools/route-tester.js",
     "test-public": "node src/tools/route-tester.js public",
     "test-protected": "node src/tools/route-tester.js protected",
     "show-routes": "node src/tools/route-tester.js config",
-    "test-cors": "node src/tools/test-cors.js"
+    "test-cors": "node src/tools/test-cors.js",
+    "test-google-auth": "node src/tools/test-google-auth.js"
   },
   "keywords": [
     "api",

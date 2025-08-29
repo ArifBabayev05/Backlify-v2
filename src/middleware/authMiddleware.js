@@ -225,6 +225,10 @@ class AuthenticationMiddleware {
     this.addPublicRoute('POST', '/auth/login');
     this.addPublicRoute('POST', '/auth/refresh');
     
+    // Public Google auth routes
+    this.addPublicRoute('POST', '/auth/google-login');
+    this.addPublicRoute('POST', '/auth/google-verify');
+    
     // Public health check
     this.addPublicRoute('GET', '/health');
     this.addPublicRoute('GET', '/api/health');
@@ -240,6 +244,9 @@ class AuthenticationMiddleware {
     this.addProtectedRoute('GET', '/auth/profile');
     this.addProtectedRoute('PUT', '/auth/profile');
     this.addProtectedRoute('POST', '/auth/change-password');
+    
+    // Protected Google auth routes
+    this.addProtectedRoute('GET', '/auth/google-profile');
   }
 
   /**

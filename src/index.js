@@ -1604,6 +1604,10 @@ app.use('/', schemaRoutes);
 const paymentRoutes = require('./routes/paymentRoutes');
 app.use('/api/payment', paymentRoutes);
 
+// Add Google authentication routes
+const googleAuthRoutes = require('./routes/googleAuthRoutes');
+app.use('/auth', googleAuthRoutes);
+
 // Add direct Epoint callback route (public access)
 const PaymentController = require('./controllers/paymentController');
 const paymentController = new PaymentController();

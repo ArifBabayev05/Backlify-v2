@@ -36,7 +36,9 @@ const publicRoutes = [
   { method: 'GET', path: '/health', name: 'Health Check' },
   { method: 'GET', path: '/api/payment/success?order_id=test123', name: 'Payment Success' },
   { method: 'GET', path: '/api/payment/cancel?order_id=test123', name: 'Payment Cancel' },
-  { method: 'POST', path: '/api/epoint-callback', name: 'Epoint Callback', data: { data: 'test', signature: 'test' } }
+  { method: 'POST', path: '/api/epoint-callback', name: 'Epoint Callback', data: { data: 'test', signature: 'test' } },
+  { method: 'POST', path: '/auth/google-login', name: 'Google Login', data: { google_token: 'test', email: 'test@gmail.com', google_id: '123' } },
+  { method: 'POST', path: '/auth/google-verify', name: 'Google Verify', data: { google_token: 'test' } }
 ];
 
 /**
@@ -46,7 +48,8 @@ const protectedRoutes = [
   { method: 'POST', path: '/api/payment/order', name: 'Create Payment Order', data: { planId: 'basic' } },
   { method: 'GET', path: '/api/payment/history', name: 'Payment History' },
   { method: 'GET', path: '/api/payment/subscription', name: 'User Subscription' },
-  { method: 'GET', path: '/api/payment/check-subscription', name: 'Check Subscription' }
+  { method: 'GET', path: '/api/payment/check-subscription', name: 'Check Subscription' },
+  { method: 'GET', path: '/auth/google-profile', name: 'Google User Profile' }
 ];
 
 /**
