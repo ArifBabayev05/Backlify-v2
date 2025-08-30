@@ -49,24 +49,24 @@ class GoogleAuthController {
         // Check if user exists with this email (regular account)
         user = await this.findUserByEmail(email);
         
-        if (user) {
-          // Link Google ID to existing account
-          await this.linkGoogleIdToUser(user.id, google_id, picture);
-          console.log(`Linked Google ID ${google_id} to existing user ${user.username}`);
-        } else {
-          // Create new user with Google info
-          user = await this.createGoogleUser(email, name, picture, google_id);
-          console.log(`Created new Google user: ${user.username}`);
-        }
+              if (user) {
+        // Link Google ID to existing account
+        await this.linkGoogleIdToUser(user.username, google_id, picture);
+        console.log(`Linked Google ID ${google_id} to existing user ${user.username}`);
       } else {
-        // Update user info if needed
-        await this.updateUserGoogleInfo(user.id, name, picture);
-        console.log(`Updated Google user info: ${user.username}`);
+        // Create new user with Google info
+        user = await this.createGoogleUser(email, name, picture, google_id);
+        console.log(`Created new Google user: ${user.username}`);
       }
+    } else {
+      // Update user info if needed
+      await this.updateUserGoogleInfo(user.username, name, picture);
+      console.log(`Updated Google user info: ${user.username}`);
+    }
 
       // Generate JWT tokens
-      const accessToken = await authUtils.generateToken(user.username, 'access');
-      const refreshToken = await authUtils.generateToken(user.username, 'refresh');
+      const accessToken = authUtils.generateAccessToken(user.username);
+      const refreshToken = authUtils.generateRefreshToken(user.username);
 
       // Store refresh token
       await authUtils.storeRefreshToken(user.username, refreshToken);
@@ -169,6 +169,8 @@ class GoogleAuthController {
    */
   async createGoogleUser(email, name, picture, googleId) {
     try {
+      console.log('🔄 Creating Google user:', { email, name, googleId });
+      
       // Generate username from email
       const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
       let username = baseUsername;
@@ -179,6 +181,8 @@ class GoogleAuthController {
         username = `${baseUsername}${counter}`;
         counter++;
       }
+
+      console.log('📝 Generated username:', username);
 
       // Create password hash (won't be used for Google login, but required for DB)
       const hashedPassword = await bcrypt.hash(`google_${googleId}_${Date.now()}`, 10);
@@ -191,10 +195,10 @@ class GoogleAuthController {
         profile_picture: picture,
         google_id: googleId,
         email_verified: true, // Google emails are pre-verified
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
         login_method: 'google'
       };
+
+      console.log('📋 User data to insert:', { ...userData, password: '[HIDDEN]' });
 
       const { data, error } = await this.supabase
         .from('users')
@@ -203,12 +207,21 @@ class GoogleAuthController {
         .single();
 
       if (error) {
+        console.error('❌ Database insert error:', error);
+        console.error('   Code:', error.code);
+        console.error('   Details:', error.details);
+        console.error('   Hint:', error.hint);
+        console.error('   Message:', error.message);
         throw error;
       }
 
+      console.log('✅ Google user created successfully:', data.username);
       return data;
     } catch (error) {
-      console.error('Error creating Google user:', error);
+      console.error('💥 Error creating Google user:', error);
+      if (error.code) {
+        throw new Error(`Database error: ${error.message} (Code: ${error.code})`);
+      }
       throw new Error('Failed to create user account');
     }
   }
@@ -216,23 +229,39 @@ class GoogleAuthController {
   /**
    * Link Google ID to existing user
    */
-  async linkGoogleIdToUser(userId, googleId, picture) {
+  async linkGoogleIdToUser(username, googleId, picture) {
     try {
+      console.log('🔗 Linking Google ID to existing user:', { username, googleId });
+      
+      const updateData = {
+        google_id: googleId,
+        profile_picture: picture,
+        email_verified: true,
+        login_method: 'google'
+      };
+
+      console.log('📋 Update data:', updateData);
+
       const { error } = await this.supabase
         .from('users')
-        .update({
-          google_id: googleId,
-          profile_picture: picture,
-          email_verified: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+        .update(updateData)
+        .eq('username', username);
 
       if (error) {
+        console.error('❌ Database update error:', error);
+        console.error('   Code:', error.code);
+        console.error('   Details:', error.details);
+        console.error('   Hint:', error.hint);
+        console.error('   Message:', error.message);
         throw error;
       }
+
+      console.log('✅ Google ID linked successfully to user:', username);
     } catch (error) {
-      console.error('Error linking Google ID to user:', error);
+      console.error('💥 Error linking Google ID to user:', error);
+      if (error.code) {
+        throw new Error(`Database error: ${error.message} (Code: ${error.code})`);
+      }
       throw new Error('Failed to link Google account');
     }
   }
@@ -240,25 +269,32 @@ class GoogleAuthController {
   /**
    * Update user Google info
    */
-  async updateUserGoogleInfo(userId, name, picture) {
+  async updateUserGoogleInfo(username, name, picture) {
     try {
-      const updateData = {
-        updated_at: new Date().toISOString()
-      };
+      const updateData = {};
 
       if (name) updateData.full_name = name;
       if (picture) updateData.profile_picture = picture;
 
+      // Only update if there's something to update
+      if (Object.keys(updateData).length === 0) {
+        console.log('ℹ️  No Google info to update');
+        return;
+      }
+
       const { error } = await this.supabase
         .from('users')
         .update(updateData)
-        .eq('id', userId);
+        .eq('username', username);
 
       if (error) {
+        console.error('❌ Error updating Google info:', error);
         throw error;
       }
+
+      console.log('✅ Google info updated for user:', username);
     } catch (error) {
-      console.error('Error updating user Google info:', error);
+      console.error('💥 Error updating user Google info:', error);
       // Don't throw error, this is not critical
     }
   }
@@ -270,7 +306,7 @@ class GoogleAuthController {
     try {
       const { data, error } = await this.supabase
         .from('users')
-        .select('id')
+        .select('username')
         .eq('username', username)
         .single();
 

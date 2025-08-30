@@ -363,10 +363,52 @@ const authMiddleware = async (req, res, next) => {
   next();
 };
 
+/**
+ * Store refresh token (for consistency with Google auth)
+ * @param {string} username - User's username
+ * @param {string} refreshToken - Refresh token to store
+ * @returns {Object} Result of operation
+ */
+const storeRefreshToken = async (username, refreshToken) => {
+  try {
+    // For now, we just return success since refresh tokens are stateless JWT
+    // In the future, this could store token metadata in database
+    console.log(`✅ Refresh token generated for user: ${username}`);
+    return {
+      success: true,
+      message: 'Refresh token stored successfully'
+    };
+  } catch (error) {
+    console.error('Error storing refresh token:', error);
+    return {
+      success: false,
+      message: 'Failed to store refresh token'
+    };
+  }
+};
+
+/**
+ * Generate token wrapper for backward compatibility
+ * @param {string} username - User's username
+ * @param {string} type - Token type ('access' or 'refresh')
+ * @returns {string} Generated token
+ */
+const generateToken = (username, type) => {
+  if (type === 'access') {
+    return generateAccessToken(username);
+  } else if (type === 'refresh') {
+    return generateRefreshToken(username);
+  } else {
+    throw new Error(`Invalid token type: ${type}`);
+  }
+};
+
 module.exports = {
   authenticateUser,
   generateAccessToken,
   generateRefreshToken,
+  generateToken,
+  storeRefreshToken,
   verifyToken,
   refreshAccessToken,
   invalidateToken,

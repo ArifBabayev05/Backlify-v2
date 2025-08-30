@@ -1608,6 +1608,10 @@ app.use('/api/payment', paymentRoutes);
 const googleAuthRoutes = require('./routes/googleAuthRoutes');
 app.use('/auth', googleAuthRoutes);
 
+// Add debug routes (for development/testing)
+const debugRoutes = require('./routes/debugRoutes');
+app.use('/debug', debugRoutes);
+
 // Add direct Epoint callback route (public access)
 const PaymentController = require('./controllers/paymentController');
 const paymentController = new PaymentController();

@@ -229,6 +229,11 @@ class AuthenticationMiddleware {
     this.addPublicRoute('POST', '/auth/google-login');
     this.addPublicRoute('POST', '/auth/google-verify');
     
+    // Public debug routes (for development/testing)
+    this.addPublicRoute('POST', '/debug/google-user-creation');
+    this.addPublicRoute('POST', '/debug/google-full-flow');
+    this.addPublicRoute('GET', '/debug/database-status');
+    
     // Public health check
     this.addPublicRoute('GET', '/health');
     this.addPublicRoute('GET', '/api/health');
