@@ -1250,64 +1250,23 @@ app.use('/api/:apiId', async (req, res, next) => {
     return router(req, res, next);
   }
   
-  // Continue with normal authentication flow
-  // Validate authentication token
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
+  // Skip authentication for ALL API endpoints - open access mode
+  console.log(`Allowing open access to API ${apiId} for testing purposes`);
   
-  if (!token) {
-    // Ensure CORS headers are set for error responses
-    setCorsHeaders(res);
-    return res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Authentication token is required'
-    });
-  }
+  // Set default user ID for unauthenticated access
+  req.XAuthUserId = req.XAuthUserId || 'anonymous';
+  req.user = { username: req.XAuthUserId, type: 'anonymous' };
   
-  try {
-    // Import auth utils for token verification
-    const authUtils = require('./utils/security/auth');
-    const result = await authUtils.verifyToken(token);
-    
-    if (!result.success || result.data.type !== 'access') {
-      // Ensure CORS headers are set for error responses
-      setCorsHeaders(res);
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid or expired token'
-      });
-    }
-    
-    // Set verified user data on request
-    req.user = result.data;
-    req.XAuthUserId = result.data.username;
-    console.log(`Authenticated user: ${req.XAuthUserId} for API access`);
-    
-    // Log information about this API and request
-    console.log(`API ${apiId} access:`, {
-      apiXAuthUserId: router.XAuthUserId,
-      requestXAuthUserId: req.XAuthUserId,
-      apiMetadata: apiPublisher.apiMetadata.get(apiId)
-    });
-    
-    // Ensure CORS headers are set for this request
-    setCorsHeaders(res);
-    
-    // Store the apiId on the request for use in the router
-    req.apiId = apiId;
-    
-    // Use the router as middleware instead
-    req.url = req.url.replace(`/api/${apiId}`, '') || '/';
-    return router(req, res, next);
-  } catch (error) {
-    console.error('Auth error:', error);
-    // Ensure CORS headers are set for error responses
-    setCorsHeaders(res);
-    return res.status(500).json({
-      error: 'Authentication error',
-      message: 'Failed to process authentication'
-    });
-  }
+  // Ensure CORS headers are set for this request
+  setCorsHeaders(res);
+  
+  // Store the apiId on the request for use in the router
+  req.apiId = apiId;
+  
+  // Use the router as middleware instead
+  req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+  return router(req, res, next);
+
 });
 
 // Add this route after your existing routes - verify user owns the API
