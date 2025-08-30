@@ -238,6 +238,10 @@ class AuthenticationMiddleware {
     this.addPublicRoute('GET', '/health');
     this.addPublicRoute('GET', '/api/health');
     
+    // Public Swagger documentation routes
+    this.addPublicRoute('GET', '/api/*/docs');
+    this.addPublicRoute('GET', '/api/*/swagger.json');
+    
     // Protected payment routes
     this.addProtectedRoute('POST', '/api/payment/order');
     this.addProtectedRoute('GET', '/api/payment/history');

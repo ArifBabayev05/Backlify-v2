@@ -38,7 +38,9 @@ const publicRoutes = [
   { method: 'GET', path: '/api/payment/cancel?order_id=test123', name: 'Payment Cancel' },
   { method: 'POST', path: '/api/epoint-callback', name: 'Epoint Callback', data: { data: 'test', signature: 'test' } },
   { method: 'POST', path: '/auth/google-login', name: 'Google Login', data: { google_token: 'test', email: 'test@gmail.com', google_id: '123' } },
-  { method: 'POST', path: '/auth/google-verify', name: 'Google Verify', data: { google_token: 'test' } }
+  { method: 'POST', path: '/auth/google-verify', name: 'Google Verify', data: { google_token: 'test' } },
+  { method: 'GET', path: '/api/test-api/docs', name: 'Swagger UI Documentation' },
+  { method: 'GET', path: '/api/test-api/swagger.json', name: 'Swagger JSON Spec' }
 ];
 
 /**

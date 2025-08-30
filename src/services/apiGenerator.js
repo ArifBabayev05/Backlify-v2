@@ -649,15 +649,8 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
   // Build the paths from the schemas
   const paths = {};
   
-  // Define security scheme for JWT authentication
-  const securitySchemes = {
-    bearerAuth: {
-      type: 'http',
-      scheme: 'bearer',
-      bearerFormat: 'JWT',
-      description: 'Enter your JWT token in the format: Bearer {token}'
-    }
-  };
+  // No security schemes - allow free access to Swagger UI testing
+  const securitySchemes = {};
   
   // For each table, create swagger paths
   safeSchemas.forEach(schema => {
@@ -672,7 +665,6 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
       get: {
         tags: [tableName],
         summary: `Get all ${tableName} records`,
-        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'page',
@@ -701,14 +693,13 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
         ],
         responses: {
           '200': { description: 'Successful operation' },
-          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
-          '403': { description: 'Forbidden - You do not have permission to access this resource' }
+          '400': { description: 'Bad request - Invalid parameters' },
+          '500': { description: 'Internal server error' }
         }
       },
       post: {
         tags: [tableName],
         summary: `Create a new ${tableName} record`,
-        security: [{ bearerAuth: [] }],
         requestBody: {
           content: {
             'application/json': {
@@ -717,12 +708,12 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
               }
             }
           },
-          description: 'XAuthUserId will be set automatically from your authentication token'
+          description: 'Data for creating or updating a record'
         },
         responses: {
           '201': { description: 'Record created successfully' },
-          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
-          '403': { description: 'Forbidden - You do not have permission to access this resource' }
+          '400': { description: 'Bad request - Invalid data' },
+          '500': { description: 'Internal server error' }
         }
       }
     };
@@ -732,7 +723,6 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
       get: {
         tags: [tableName],
         summary: `Get a ${tableName} record by ID`,
-        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -743,15 +733,14 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
         ],
         responses: {
           '200': { description: 'Successful operation' },
-          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
-          '403': { description: 'Forbidden - You do not have permission to access this resource' },
-          '404': { description: 'Record not found' }
+          '400': { description: 'Bad request - Invalid ID' },
+          '404': { description: 'Record not found' },
+          '500': { description: 'Internal server error' }
         }
       },
       put: {
         tags: [tableName],
         summary: `Update a ${tableName} record`,
-        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -768,19 +757,18 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
               }
             }
           },
-          description: 'XAuthUserId will be set automatically from your authentication token'
+          description: 'Data for creating or updating a record'
         },
         responses: {
           '200': { description: 'Record updated successfully' },
-          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
-          '403': { description: 'Forbidden - You do not have permission to access this resource' },
-          '404': { description: 'Record not found' }
+          '400': { description: 'Bad request - Invalid data or ID' },
+          '404': { description: 'Record not found' },
+          '500': { description: 'Internal server error' }
         }
       },
       delete: {
         tags: [tableName],
         summary: `Delete a ${tableName} record`,
-        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -791,9 +779,9 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
         ],
         responses: {
           '204': { description: 'Record deleted successfully' },
-          '401': { description: 'Unauthorized - Authentication token is missing or invalid' },
-          '403': { description: 'Forbidden - You do not have permission to access this resource' },
-          '404': { description: 'Record not found' }
+          '400': { description: 'Bad request - Invalid ID' },
+          '404': { description: 'Record not found' },
+          '500': { description: 'Internal server error' }
         }
       }
     };
@@ -948,7 +936,7 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
     info: {
       title: `API for User ${effectiveXAuthUserId}`,
       version: "1.0.0",
-      description: 'API generated by Backlify\n\n**Authentication Required**: All API endpoints require a valid JWT token in the Authorization header using the Bearer scheme.'
+      description: 'API generated by Backlify\n\n**Open Access**: All API endpoints are publicly accessible and can be tested directly from this Swagger interface without authentication.'
     },
     servers: [
       {
@@ -960,11 +948,7 @@ function _generateSwaggerSpec(tableSchemas, XAuthUserId) {
       schemas: schemas || {},
       securitySchemes: securitySchemes
     },
-    security: [
-      {
-        bearerAuth: []
-      }
-    ]
+    // No global security requirements - open access
   };
 }
 
