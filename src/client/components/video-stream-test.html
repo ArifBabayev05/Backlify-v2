@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Stream Test - Backlify-v2</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .video-player {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        video {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .info {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .error {
+            background: #ffe7e7;
+            border: 1px solid #ffb3b3;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Video Stream Test</h1>
+        
+        <div class="info">
+            <strong>ℹ️ How to test:</strong>
+            <ol>
+                <li>First upload a video using the upload endpoint</li>
+                <li>Note the video ID from the upload response</li>
+                <li>Enter that ID below and click "Stream Video"</li>
+                <li>The video should start playing in the browser</li>
+            </ol>
+        </div>
+        
+        <div class="form-group">
+            <label for="videoIdInput">Video ID:</label>
+            <input type="number" id="videoIdInput" placeholder="Enter video ID to test streaming" />
+        </div>
+        
+        <button onclick="testVideoStream()">Stream Video</button>
+        <button onclick="getVideoInfo()">Get Video Info</button>
+        <button onclick="getVideoList()">Get Video List</button>
+        
+        <div id="result" style="display: none;"></div>
+        
+        <div id="videoPlayer" class="video-player" style="display: none;">
+            <h3>Video Player</h3>
+            <video controls width="100%">
+                <source id="videoSource" src="" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/video';
+        
+        function showResult(content, type = 'info') {
+            const element = document.getElementById('result');
+            element.style.display = 'block';
+            element.className = type;
+            element.innerHTML = content;
+        }
+        
+        function hideResult() {
+            document.getElementById('result').style.display = 'none';
+        }
+        
+        async function testVideoStream() {
+            const videoId = document.getElementById('videoIdInput').value;
+            
+            if (!videoId) {
+                showResult('Please enter a video ID first.', 'error');
+                return;
+            }
+            
+            hideResult();
+            document.getElementById('videoPlayer').style.display = 'none';
+            
+            try {
+                // First check if video exists
+                const infoResponse = await fetch(`${API_BASE}/${videoId}/info`);
+                const infoResult = await infoResponse.json();
+                
+                if (infoResult.success) {
+                    const video = infoResult.data;
+                    
+                    showResult(`
+                        <strong>✅ Video found!</strong><br>
+                        ID: ${video.id}<br>
+                        Name: ${video.originalName}<br>
+                        Size: ${video.fileSizeMB} MB<br>
+                        Type: ${video.mimeType}<br>
+                        Uploaded: ${new Date(video.uploadedAt).toLocaleString()}
+                    `, 'info');
+                    
+                    // Set up video player
+                    const videoSource = document.getElementById('videoSource');
+                    videoSource.src = `${API_BASE}/${videoId}`;
+                    videoSource.type = video.mimeType;
+                    
+                    document.getElementById('videoPlayer').style.display = 'block';
+                    
+                    // Load the video
+                    const videoElement = document.querySelector('#videoPlayer video');
+                    videoElement.load();
+                    
+                    // Add event listeners for debugging
+                    videoElement.addEventListener('loadstart', () => console.log('Video loading started'));
+                    videoElement.addEventListener('loadeddata', () => console.log('Video data loaded'));
+                    videoElement.addEventListener('canplay', () => console.log('Video can play'));
+                    videoElement.addEventListener('error', (e) => {
+                        console.error('Video error:', e);
+                        showResult(`Video playback error: ${e.message}`, 'error');
+                    });
+                    
+                } else {
+                    showResult(`❌ Video not found: ${infoResult.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function getVideoInfo() {
+            const videoId = document.getElementById('videoIdInput').value;
+            
+            if (!videoId) {
+                showResult('Please enter a video ID first.', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/${videoId}/info`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const video = result.data;
+                    showResult(`
+                        <strong>📋 Video Information:</strong><br>
+                        ID: ${video.id}<br>
+                        Filename: ${video.filename}<br>
+                        Original Name: ${video.originalName}<br>
+                        Size: ${video.fileSizeMB} MB<br>
+                        MIME Type: ${video.mimeType}<br>
+                        Uploaded: ${new Date(video.uploadedAt).toLocaleString()}
+                    `, 'info');
+                } else {
+                    showResult(`❌ Failed to get video info: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function getVideoList() {
+            try {
+                const response = await fetch(`${API_BASE}/list?limit=10`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const videos = result.data.videos;
+                    if (videos.length > 0) {
+                        let videoList = '<strong>📋 Available Videos:</strong><br>';
+                        videos.forEach(video => {
+                            videoList += `
+                                ID: ${video.id} | ${video.original_name} | ${(video.file_size / 1024 / 1024).toFixed(2)} MB<br>
+                            `;
+                        });
+                        showResult(videoList, 'info');
+                    } else {
+                        showResult('No videos found. Upload a video first!', 'info');
+                    }
+                } else {
+                    showResult(`❌ Failed to get video list: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get video list on page load
+            getVideoList();
+        });
+    </script>
+</body>
+</html>

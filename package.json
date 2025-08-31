@@ -14,7 +14,9 @@
     "test-protected": "node src/tools/route-tester.js protected",
     "show-routes": "node src/tools/route-tester.js config",
     "test-cors": "node src/tools/test-cors.js",
-    "test-google-auth": "node src/tools/test-google-auth.js"
+    "test-google-auth": "node src/tools/test-google-auth.js",
+    "test-video": "node src/tools/test-video-endpoints.js",
+    "test-video-streaming": "node src/tools/test-video-streaming.js"
   },
   "keywords": [
     "api",
@@ -39,6 +41,7 @@
     "got": "^14.4.6",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
     "pg": "^8.14.0",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",

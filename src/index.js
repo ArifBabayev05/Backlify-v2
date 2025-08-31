@@ -1191,8 +1191,8 @@ app.get('/my-apis', (req, res) => {
 app.use('/api/:apiId', async (req, res, next) => {
   const apiId = req.params.apiId;
   
-  // Skip this middleware for payment routes and health checks
-  if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback') {
+  // Skip this middleware for payment routes, health checks, and video routes
+  if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'video') {
     return next();
   }
   
@@ -1566,6 +1566,10 @@ app.use('/api/payment', paymentRoutes);
 // Add Google authentication routes
 const googleAuthRoutes = require('./routes/googleAuthRoutes');
 app.use('/auth', googleAuthRoutes);
+
+// Add video routes (use different path to avoid conflicts with dynamic API routing)
+const videoRoutes = require('./routes/videoRoutes');
+app.use('/video', videoRoutes);
 
 // Add debug routes (for development/testing)
 const debugRoutes = require('./routes/debugRoutes');
