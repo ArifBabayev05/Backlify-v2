@@ -18,6 +18,15 @@ const securityHeaders = require('./middleware/security/securityHeaders');
 // Load payment routes
 const paymentRoutes = require('./routes/paymentRoutes');
 
+// Load Epoint payment gateway routes
+const epointRoutes = require('./routes/epointRoutes');
+
+// Load Account Settings routes
+const accountRoutes = require('./routes/accountRoutes');
+
+// Load API Usage middleware
+const apiUsageMiddleware = require('./middleware/apiUsageMiddleware');
+
 // Load environment variables
 dotenv.config();
 
@@ -40,6 +49,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // This will automatically handle public vs protected routes
 app.use(authenticate());
 
+// Apply API usage tracking middleware
+app.use(apiUsageMiddleware.trackUsage());
+
 console.log('🔧 Authentication middleware configuration:');
 const config = authMiddleware.getRouteConfiguration();
 console.log(`📖 Public routes: ${config.totalPublic}`);
@@ -54,8 +66,11 @@ const supabase = createClient(
 // Setup payment routes (they already have their own auth middleware)
 app.use('/api/payment', paymentRoutes);
 
-// Add Epoint callback route directly (must be public)
-app.post('/api/epoint-callback', paymentRoutes);
+// Setup Epoint payment gateway routes
+app.use('/api/epoint', epointRoutes);
+
+// Setup Account Settings routes
+app.use('/api/user', accountRoutes);
 
 // Health check endpoint (public)
 app.get('/health', (req, res) => {

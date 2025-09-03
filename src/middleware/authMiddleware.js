@@ -256,6 +256,17 @@ class AuthenticationMiddleware {
     
     // Protected Google auth routes
     this.addProtectedRoute('GET', '/auth/google-profile');
+    
+    // Protected Account Settings routes
+    this.addProtectedRoute('GET', '/api/user/profile');
+    this.addProtectedRoute('PUT', '/api/user/profile');
+    this.addProtectedRoute('PUT', '/api/user/change-password');
+    this.addProtectedRoute('GET', '/api/user/subscription');
+    this.addProtectedRoute('POST', '/api/user/subscription/upgrade');
+    this.addProtectedRoute('GET', '/api/user/usage');
+    this.addProtectedRoute('GET', '/api/user/logs');
+    this.addProtectedRoute('GET', '/api/user/notifications/settings');
+    this.addProtectedRoute('PUT', '/api/user/notifications/settings');
   }
 
   /**

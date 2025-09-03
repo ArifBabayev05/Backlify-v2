@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const config = require('../config/config');
 const { createClient } = require('@supabase/supabase-js');
+const EpointService = require('./epointService');
 
 class PaymentService {
   constructor() {
@@ -10,16 +11,66 @@ class PaymentService {
     );
     this.epointConfig = config.payment.epoint;
     this.plans = config.payment.plans;
+    this.epointService = new EpointService();
   }
 
   /**
-   * Get available payment plans
+   * Get available payment plans from database
    */
-  getAvailablePlans() {
-    return Object.keys(this.plans).map(planId => ({
-      id: planId,
-      ...this.plans[planId]
-    }));
+  async getAvailablePlans() {
+    try {
+      const { data: plans, error } = await this.supabase
+        .from('payment_plans')
+        .select('plan_id, name, price, currency, features, is_active')
+        .eq('is_active', true)
+        .order('price', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching payment plans:', error);
+        throw error;
+      }
+
+      return plans.map(plan => ({
+        id: plan.plan_id,
+        name: plan.name,
+        price: parseFloat(plan.price),
+        currency: plan.currency,
+        features: plan.features || []
+      }));
+    } catch (error) {
+      console.error('Error getting available plans:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get plan by ID from database
+   */
+  async getPlanById(planId) {
+    try {
+      const { data: plan, error } = await this.supabase
+        .from('payment_plans')
+        .select('*')
+        .eq('plan_id', planId)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        console.error('Error fetching plan by ID:', error);
+        throw error;
+      }
+
+      return {
+        id: plan.plan_id,
+        name: plan.name,
+        price: parseFloat(plan.price),
+        currency: plan.currency,
+        features: plan.features || []
+      };
+    } catch (error) {
+      console.error('Error getting plan by ID:', error);
+      throw error;
+    }
   }
 
   /**
@@ -27,7 +78,7 @@ class PaymentService {
    */
   async createOrder(userId, planId, apiId = null) {
     try {
-      const plan = this.plans[planId];
+      const plan = await this.getPlanById(planId);
       if (!plan) {
         throw new Error('Invalid plan selected');
       }
@@ -59,51 +110,36 @@ class PaymentService {
   }
 
   /**
-   * Generate Epoint payment URL
+   * Generate Epoint payment URL using the new EpointService
    */
   generateEpointPaymentUrl(order) {
-    const paymentData = {
-      merchant_id: this.epointConfig.merchantId,
-      order_id: order.id,
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    
+    const paymentData = this.epointService.prepareStandardPayment({
       amount: order.amount,
-      currency: order.currency,
+      order_id: order.id,
       description: `Backlify ${this.plans[order.plan_id].name}`,
-      callback_url: `${process.env.BASE_URL || 'http://localhost:3000'}${this.epointConfig.callbackUrl}`,
-      return_url: `${process.env.BASE_URL || 'http://localhost:3000'}/payment/success`,
-      cancel_url: `${process.env.BASE_URL || 'http://localhost:3000'}/payment/cancel`
-    };
-
-    // Convert to JSON string and encode
-    const jsonData = JSON.stringify(paymentData);
-    const encodedData = Buffer.from(jsonData).toString('base64');
-    
-    // Generate signature
-    const signature = this.generateSignature(encodedData);
-    
-    const params = new URLSearchParams({
-      data: encodedData,
-      signature: signature
+      success_redirect_url: process.env.SUCCESS_REDIRECT_URL,
+      error_redirect_url: process.env.ERROR_REDIRECT_URL,
+      currency: order.currency,
+      language: 'az'
     });
 
-    return `${this.epointConfig.apiUrl}/payment?${params.toString()}`;
+    return paymentData.checkout_url;
   }
 
   /**
-   * Generate signature for Epoint
+   * Generate signature for Epoint (legacy method - now uses EpointService)
    */
   generateSignature(data) {
-    const privateKey = this.epointConfig.privateKey;
-    const signatureString = privateKey + data + privateKey;
-    const hash = crypto.createHash('sha1').update(signatureString).digest();
-    return hash.toString('base64');
+    return this.epointService.generateSignature(data);
   }
 
   /**
-   * Verify Epoint callback signature
+   * Verify Epoint callback signature (legacy method - now uses EpointService)
    */
   verifySignature(data, signature) {
-    const expectedSignature = this.generateSignature(data);
-    return expectedSignature === signature;
+    return this.epointService.validateSignature(data, signature);
   }
 
   /**

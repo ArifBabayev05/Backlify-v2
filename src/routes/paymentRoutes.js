@@ -55,7 +55,7 @@ router.get('/check-subscription', protectedRoute(), paymentController.checkSubsc
 
 /**
  * @route POST /api/epoint-callback
- * @desc Epoint payment callback endpoint
+ * @desc Epoint payment callback endpoint (legacy - now handled by /api/epoint/callback)
  * @access Public - No authentication required (called by Epoint)
  */
 router.post('/epoint-callback', publicRoute(), paymentController.processEpointCallback.bind(paymentController));

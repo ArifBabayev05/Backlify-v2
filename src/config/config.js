@@ -15,9 +15,11 @@ const config = {
   },
   payment: {
     epoint: {
+      publicKey: process.env.EPOINT_PUBLIC_KEY,
       privateKey: process.env.EPOINT_PRIVATE_KEY,
       merchantId: process.env.EPOINT_MERCHANT_ID,
       apiUrl: process.env.EPOINT_API_URL || 'https://api.epoint.az',
+      apiBaseUrl: process.env.EPOINT_API_BASE_URL || 'https://epoint.az/api/1',
       callbackUrl: process.env.EPOINT_CALLBACK_URL || '/api/epoint-callback'
     },
     plans: {

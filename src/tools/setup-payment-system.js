@@ -32,8 +32,8 @@ async function setupPaymentSystem() {
       console.log('📋 Creating payment system tables...');
       
       // Execute the table creation SQL
-      const { error: createError } = await supabase.rpc('exec_sql', {
-        sql: createPaymentTables
+      const { error: createError } = await supabase.rpc('execute_sql', {
+        sql_query: createPaymentTables
       });
 
       if (createError) {
@@ -156,7 +156,7 @@ async function createTablesIndividually(supabase) {
   for (const table of tables) {
     try {
       console.log(`  Creating ${table.name}...`);
-      const { error } = await supabase.rpc('exec_sql', { sql: table.sql });
+      const { error } = await supabase.rpc('execute_sql', { sql_query: table.sql });
       
       if (error) {
         console.log(`    ⚠️  Warning: Could not create ${table.name}:`, error.message);

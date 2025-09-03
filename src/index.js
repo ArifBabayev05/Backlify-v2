@@ -11,6 +11,9 @@ const { createClient } = require('@supabase/supabase-js');
 const loggerMiddleware = require('./middleware/loggerMiddleware');
 const security = require('./security');
 const { initializeSecurityTables } = require('./utils/security/initializeSecurityTables');
+const EpointTablesSetup = require('./utils/setup/epointTables');
+const AccountTablesSetup = require('./utils/setup/accountTables');
+
 // Load environment variables
 dotenv.config();
 
@@ -94,6 +97,20 @@ checkDatabase();
 initializeSecurityTables().catch(err => {
   console.error('Error initializing security tables:', err);
   console.warn('Some security features might not work correctly');
+});
+
+// Initialize Epoint payment tables
+const epointTablesSetup = new EpointTablesSetup();
+epointTablesSetup.createTables().catch(err => {
+  console.error('Error initializing Epoint tables:', err);
+  console.warn('Epoint payment features might not work correctly');
+});
+
+// Initialize Account Settings tables
+const accountTablesSetup = new AccountTablesSetup();
+accountTablesSetup.createTables().catch(err => {
+  console.error('Error initializing Account Settings tables:', err);
+  console.warn('Account Settings features might not work correctly');
 });
 
 // ========== UNIVERSAL CORS CONFIGURATION ==========
@@ -1189,19 +1206,21 @@ app.get('/my-apis', (req, res) => {
 
 // Dynamic API routing - verify user has access to the API
 app.use('/api/:apiId', async (req, res, next) => {
-  const apiId = req.params.apiId;
-  
-  // Skip this middleware for payment routes, health checks, and video routes
-  if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'video') {
-    return next();
-  }
+  try {
+    const apiId = req.params.apiId;
+    
+    // Skip this middleware for payment routes, health checks, and video routes
+    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video') {
+      return next();
+    }
   
   // Skip authentication for Swagger UI and docs
   if (req.path.includes('/docs') || req.path.includes('/swagger.json')) {
     console.log(`Skipping authentication for documentation path: ${req.path}`);
     const router = apiPublisher.getRouter(apiId);
     
-    if (!router) {
+    if (!router || typeof router !== 'function') {
+      console.error(`API not found in registry or router is not a function: ${apiId}`, typeof router);
       // Ensure CORS headers are set even for error responses
       setCorsHeaders(res);
       return res.status(404).json({ error: 'API not found' });
@@ -1215,6 +1234,13 @@ app.use('/api/:apiId', async (req, res, next) => {
     
     // Use the router as middleware instead
     req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+    
+    // Double check router exists before using it
+    if (!router || typeof router !== 'function') {
+      console.error(`Router not found for API ${apiId} or router is not a function:`, typeof router);
+      return res.status(404).json({ error: 'API not found in registry' });
+    }
+    
     return router(req, res, next);
   }
   
@@ -1225,7 +1251,8 @@ app.use('/api/:apiId', async (req, res, next) => {
   
   const router = apiPublisher.getRouter(apiId);
   
-  if (!router) {
+  if (!router || typeof router !== 'function') {
+    console.error(`API not found in registry or router is not a function: ${apiId}`, typeof router);
     // Ensure CORS headers are set even for error responses
     setCorsHeaders(res);
     return res.status(404).json({ error: 'API not found' });
@@ -1247,6 +1274,13 @@ app.use('/api/:apiId', async (req, res, next) => {
     
     // Use the router as middleware instead
     req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+    
+    // Double check router exists before using it
+    if (!router || typeof router !== 'function') {
+      console.error(`Router not found for API ${apiId} or router is not a function:`, typeof router);
+      return res.status(404).json({ error: 'API not found in registry' });
+    }
+    
     return router(req, res, next);
   }
   
@@ -1265,8 +1299,23 @@ app.use('/api/:apiId', async (req, res, next) => {
   
   // Use the router as middleware instead
   req.url = req.url.replace(`/api/${apiId}`, '') || '/';
+  
+  // Double check router exists before using it
+  if (!router) {
+    console.error(`Router not found for API ${apiId}`);
+    return res.status(404).json({ error: 'API not found in registry' });
+  }
+  
   return router(req, res, next);
 
+  } catch (error) {
+    console.error('Error in dynamic API routing middleware:', error);
+    setCorsHeaders(res);
+    return res.status(500).json({ 
+      error: 'Internal server error in API routing',
+      message: error.message 
+    });
+  }
 });
 
 // Add this route after your existing routes - verify user owns the API
@@ -1562,6 +1611,10 @@ app.use('/', schemaRoutes);
 // Add payment routes with flexible authentication
 const paymentRoutes = require('./routes/paymentRoutes');
 app.use('/api/payment', paymentRoutes);
+
+// Add Epoint payment gateway routes
+const epointRoutes = require('./routes/epointRoutes');
+app.use('/api/epoint', epointRoutes);
 
 // Add Google authentication routes
 const googleAuthRoutes = require('./routes/googleAuthRoutes');
@@ -1933,6 +1986,41 @@ app.post('/api/:apiId/fix-xauthuserid', async (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Global error handler caught:', error);
+  setCorsHeaders(res);
+  
+  // Don't leak error details in production
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  res.status(error.status || 500).json({
+    error: 'Internal server error',
+    message: isDevelopment ? error.message : 'Something went wrong',
+    ...(isDevelopment && { stack: error.stack })
+  });
+});
+
+// 404 handler for undefined routes
+app.use('*', (req, res) => {
+  setCorsHeaders(res);
+  res.status(404).json({
+    error: 'Endpoint not found',
+    message: `The requested endpoint ${req.method} ${req.originalUrl} does not exist`,
+    availableEndpoints: [
+      'GET /health',
+      'POST /api/epoint/request',
+      'POST /api/epoint/callback',
+      'POST /api/epoint/check-status',
+      'POST /api/epoint/save-card',
+      'POST /api/epoint/execute-saved-card-payment',
+      'POST /api/epoint/reverse-payment',
+      'POST /api/epoint/pre-auth/create',
+      'POST /api/epoint/pre-auth/complete'
+    ]
+  });
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backlify-v2 server running on port ${PORT}`);

@@ -1,9 +1,14 @@
 const PaymentService = require('../services/paymentService');
 const { setCorsHeaders } = require('../middleware/corsMiddleware');
+const { createClient } = require('@supabase/supabase-js');
 
 class PaymentController {
   constructor() {
     this.paymentService = new PaymentService();
+    this.supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_KEY
+    );
   }
 
   /**
@@ -13,10 +18,33 @@ class PaymentController {
     try {
       setCorsHeaders(res, req);
       
-      const plans = this.paymentService.getAvailablePlans();
+      // Get plans from database
+      const { data: plans, error } = await this.supabase
+        .from('payment_plans')
+        .select('plan_id, name, price, currency, features, is_active')
+        .eq('is_active', true)
+        .order('price', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching payment plans from database:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to fetch payment plans'
+        });
+      }
+
+      // Transform data to match expected format
+      const formattedPlans = plans.map(plan => ({
+        id: plan.plan_id,
+        name: plan.name,
+        price: parseFloat(plan.price),
+        currency: plan.currency,
+        features: plan.features || []
+      }));
+
       res.json({
         success: true,
-        data: plans
+        data: formattedPlans
       });
     } catch (error) {
       console.error('Error getting plans:', error);
