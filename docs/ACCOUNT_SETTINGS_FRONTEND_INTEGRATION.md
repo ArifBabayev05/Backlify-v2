@@ -459,19 +459,22 @@ const getApiUsage = async (period = 'month', startDate = null, endDate = null) =
 
 ## 📝 Request Logs
 
-### 1. Get Request Logs
+### 1. Get User Logs (Admin/Logs Style)
 
 **Endpoint:** `GET /api/user/logs`
 
-**Məqsəd:** İstifadəçinin API request loglarını əldə etmək
+**Məqsəd:** User-ın öz request loglarını əldə etmək (admin/logs kimi, amma yalnız user-ın öz logları)
 
 **Query Parameters:**
-- `page`: number (default: 1)
-- `limit`: number (default: 50, max: 100)
-- `startDate`: ISO date string (optional)
-- `endDate`: ISO date string (optional)
-- `status`: number (optional) - HTTP status code
-- `endpoint`: string (optional) - endpoint filter
+- `page` (optional): Səhifə nömrəsi (default: 1)
+- `limit` (optional): Hər səhifədə log sayı (default: 50, max: 100)
+- `endpoint` (optional): Endpoint filter (partial match)
+- `method` (optional): HTTP method filter (GET, POST, PUT, DELETE)
+- `status` (optional): HTTP status code filter
+- `from_date` (optional): Başlanğıc tarix (ISO format)
+- `to_date` (optional): Bitmə tarixi (ISO format)
+- `min_time` (optional): Minimum response time (ms)
+- `max_time` (optional): Maximum response time (ms)
 
 **Request:**
 ```javascript
@@ -522,17 +525,19 @@ const getRequestLogs = async (filters = {}) => {
   "data": {
     "logs": [
       {
-        "id": "log_123",
-        "timestamp": "2024-01-15T14:30:25Z",
-        "endpoint": "/api/schema/generate",
+        "id": 468,
+        "timestamp": "2025-09-01T20:28:03.4+00:00",
+        "endpoint": "/api/epoint/create-payment",
         "method": "POST",
         "status": 200,
-        "responseTime": 245,
-        "ip": "192.168.1.100",
-        "userAgent": "Mozilla/5.0...",
-        "requestSize": 1024,
-        "responseSize": 2048,
-        "error": null
+        "responseTime": 403,
+        "ip": "localhost:3000",
+        "userAgent": "PostmanRuntime/7.45.0",
+        "requestSize": 245,
+        "responseSize": 565,
+        "error": null,
+        "apiId": "epoint",
+        "isApiRequest": true
       }
     ],
     "pagination": {
@@ -540,6 +545,99 @@ const getRequestLogs = async (filters = {}) => {
       "limit": 50,
       "total": 1250,
       "totalPages": 25
+    },
+    "filters": {
+      "endpoint": null,
+      "method": null,
+      "status": null,
+      "from_date": null,
+      "to_date": null,
+      "min_time": null,
+      "max_time": null
+    }
+  }
+}
+```
+
+### 2. Get User Log Statistics
+
+**Endpoint:** `GET /api/user/logs/stats`
+
+**Məqsəd:** User-ın log statistikalarını əldə etmək
+
+**Query Parameters:**
+- `days` (optional): Gün sayı (default: 7)
+- `startDate` (optional): Başlanğıc tarix (ISO format)
+- `endDate` (optional): Bitmə tarixi (ISO format)
+- `timeRange` (optional): Predefined time range (today, yesterday, last7days, last30days, last90days)
+
+**Request:**
+```javascript
+const getUserLogStats = async (timeRange = 'last7days') => {
+  try {
+    const params = new URLSearchParams();
+    params.append('timeRange', timeRange);
+
+    const response = await fetch(`/api/user/logs/stats?${params}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      return data.data;
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (error) {
+    console.error('Error fetching log stats:', error);
+    throw error;
+  }
+};
+
+// Usage examples:
+const stats = await getUserLogStats('last30days');
+const customStats = await getUserLogStats('custom', '2025-09-01', '2025-09-03');
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "summary": {
+      "totalRequests": 1250,
+      "successfulRequests": 1200,
+      "errorRequests": 50,
+      "successRate": "96.0",
+      "errorRate": "4.0",
+      "avgResponseTime": 245
+    },
+    "topEndpoints": [
+      {
+        "endpoint": "/api/epoint/create-payment",
+        "count": 456,
+        "success": 445,
+        "errors": 11,
+        "avgResponseTime": 245
+      }
+    ],
+    "dailyData": [
+      {
+        "date": "2025-09-01",
+        "requests": 45,
+        "success": 43,
+        "errors": 2
+      }
+    ],
+    "timeRange": {
+      "start": "2025-08-25T00:00:00.000Z",
+      "end": "2025-09-01T23:59:59.999Z",
+      "days": 7
     }
   }
 }
@@ -925,6 +1023,18 @@ curl -X GET "http://localhost:3000/api/user/subscription" \
 
 # Get usage statistics
 curl -X GET "http://localhost:3000/api/user/usage?period=month" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Get user logs (admin/logs style)
+curl -X GET "http://localhost:3000/api/user/logs?page=1&limit=20" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Get user logs with filters
+curl -X GET "http://localhost:3000/api/user/logs?endpoint=/api/epoint&method=POST&status=200" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Get user log statistics
+curl -X GET "http://localhost:3000/api/user/logs/stats?timeRange=last7days" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 

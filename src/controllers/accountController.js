@@ -541,7 +541,7 @@ class AccountController {
   }
 
   /**
-   * Get request logs
+   * Get request logs (similar to /admin/logs but for user's own logs)
    * @route GET /api/user/logs
    */
   async getRequestLogs(req, res) {
@@ -555,37 +555,58 @@ class AccountController {
         });
       }
 
+      // Get filter params (same as admin/logs)
       const { 
         page = 1, 
         limit = 50, 
-        startDate, 
-        endDate, 
-        status, 
-        endpoint 
+        endpoint, 
+        method,
+        status,
+        from_date,
+        to_date,
+        min_time,
+        max_time
       } = req.query;
 
       const pageNum = parseInt(page);
       const limitNum = Math.min(parseInt(limit), 100);
       const offset = (pageNum - 1) * limitNum;
 
+      // Use api_logs table (same as admin/logs) but filter by user
       let query = this.supabase
-        .from('api_usage')
+        .from('api_logs')
         .select('*', { count: 'exact' })
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
+        .eq('XAuthUserId', userId) // Only user's own logs
+        .order('timestamp', { ascending: false })
         .range(offset, offset + limitNum - 1);
 
-      if (startDate) {
-        query = query.gte('created_at', new Date(startDate).toISOString());
-      }
-      if (endDate) {
-        query = query.lte('created_at', new Date(endDate).toISOString());
-      }
-      if (status) {
-        query = query.eq('status_code', parseInt(status));
-      }
+      // Apply filters (same as admin/logs)
       if (endpoint) {
         query = query.ilike('endpoint', `%${endpoint}%`);
+      }
+      
+      if (method) {
+        query = query.eq('method', method.toUpperCase());
+      }
+      
+      if (status) {
+        query = query.eq('response->status', parseInt(status));
+      }
+      
+      if (from_date) {
+        query = query.gte('timestamp', from_date);
+      }
+      
+      if (to_date) {
+        query = query.lte('timestamp', to_date);
+      }
+      
+      if (min_time) {
+        query = query.gte('response_time_ms', parseInt(min_time));
+      }
+      
+      if (max_time) {
+        query = query.lte('response_time_ms', parseInt(max_time));
       }
 
       const { data: logs, error, count } = await query;
@@ -605,28 +626,226 @@ class AccountController {
         data: {
           logs: logs.map(log => ({
             id: log.id,
-            timestamp: log.created_at,
+            timestamp: log.timestamp,
             endpoint: log.endpoint,
             method: log.method,
-            status: log.status_code,
-            responseTime: log.response_time,
-            ip: log.ip_address,
-            userAgent: log.user_agent,
-            requestSize: log.request_size,
-            responseSize: log.response_size,
-            error: log.error_message
+            status: log.response?.status || log.status_code,
+            responseTime: log.response_time_ms,
+            ip: log.request?.headers ? JSON.parse(log.request.headers)['host'] : 'N/A',
+            userAgent: log.request?.headers ? JSON.parse(log.request.headers)['user-agent'] : 'N/A',
+            requestSize: log.request?.body ? log.request.body.length : 0,
+            responseSize: log.response?.body ? log.response.body.length : 0,
+            error: log.response?.status >= 400 ? log.response?.body : null,
+            apiId: log.api_id,
+            isApiRequest: log.is_api_request
           })),
           pagination: {
             page: pageNum,
             limit: limitNum,
             total: count,
             totalPages
+          },
+          filters: {
+            endpoint,
+            method,
+            status,
+            from_date,
+            to_date,
+            min_time,
+            max_time
           }
         }
       });
 
     } catch (error) {
       console.error('Error in getRequestLogs:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+    }
+  }
+
+  /**
+   * Get user log statistics (similar to /admin/logs/stats but for user's own logs)
+   * @route GET /api/user/logs/stats
+   */
+  async getUserLogStats(req, res) {
+    try {
+      const userId = req.user?.id || req.headers['x-user-id'];
+      
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'User not authenticated'
+        });
+      }
+
+      const { 
+        days = 7, 
+        startDate, 
+        endDate,
+        timeRange
+      } = req.query;
+      
+      // Calculate the time range based on provided parameters
+      let startDateTime = new Date();
+      let endDateTime = new Date();
+      
+      // Case 1: If specific startDate and endDate are provided
+      if (startDate && endDate) {
+        startDateTime = new Date(startDate);
+        endDateTime = new Date(endDate);
+        
+        // Add time component if not specified (set end date to end of day)
+        if (endDateTime.getHours() === 0 && endDateTime.getMinutes() === 0 && endDateTime.getSeconds() === 0) {
+          endDateTime.setHours(23, 59, 59, 999);
+        }
+      }
+      // Case 2: If timeRange is provided, use predefined ranges
+      else if (timeRange) {
+        endDateTime = new Date(); // Current time
+        
+        switch(timeRange) {
+          case 'today':
+            startDateTime.setHours(0, 0, 0, 0); // Start of today
+            break;
+          case 'yesterday':
+            startDateTime.setDate(startDateTime.getDate() - 1);
+            startDateTime.setHours(0, 0, 0, 0);
+            endDateTime.setDate(endDateTime.getDate() - 1);
+            endDateTime.setHours(23, 59, 59, 999);
+            break;
+          case 'last7days':
+            startDateTime.setDate(startDateTime.getDate() - 7);
+            startDateTime.setHours(0, 0, 0, 0);
+            break;
+          case 'last30days':
+            startDateTime.setDate(startDateTime.getDate() - 30);
+            startDateTime.setHours(0, 0, 0, 0);
+            break;
+          case 'last90days':
+            startDateTime.setDate(startDateTime.getDate() - 90);
+            startDateTime.setHours(0, 0, 0, 0);
+            break;
+          default:
+            startDateTime.setDate(startDateTime.getDate() - 7);
+            startDateTime.setHours(0, 0, 0, 0);
+        }
+      }
+      // Case 3: Use days parameter
+      else {
+        startDateTime.setDate(startDateTime.getDate() - parseInt(days));
+        startDateTime.setHours(0, 0, 0, 0);
+      }
+      
+      // Get logs for the specified time range
+      const { data: logs, error } = await this.supabase
+        .from('api_logs')
+        .select('*')
+        .eq('XAuthUserId', userId) // Only user's own logs
+        .gte('timestamp', startDateTime.toISOString())
+        .lte('timestamp', endDateTime.toISOString());
+      
+      if (error) {
+        console.error('Error fetching logs for stats:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to fetch log statistics'
+        });
+      }
+      
+      // Calculate statistics
+      const totalRequests = logs.length;
+      const successfulRequests = logs.filter(log => log.response?.status >= 200 && log.response?.status < 300).length;
+      const errorRequests = logs.filter(log => log.response?.status >= 400).length;
+      const avgResponseTime = totalRequests > 0 ? 
+        Math.round(logs.reduce((sum, log) => sum + (log.response_time_ms || 0), 0) / totalRequests) : 0;
+      
+      // Group by endpoint
+      const endpointStats = {};
+      logs.forEach(log => {
+        if (!endpointStats[log.endpoint]) {
+          endpointStats[log.endpoint] = {
+            count: 0,
+            success: 0,
+            errors: 0,
+            totalTime: 0
+          };
+        }
+        endpointStats[log.endpoint].count++;
+        endpointStats[log.endpoint].totalTime += log.response_time_ms || 0;
+        
+        if (log.response?.status >= 200 && log.response?.status < 300) {
+          endpointStats[log.endpoint].success++;
+        } else if (log.response?.status >= 400) {
+          endpointStats[log.endpoint].errors++;
+        }
+      });
+      
+      // Convert to array and sort by count
+      const topEndpoints = Object.entries(endpointStats)
+        .map(([endpoint, stats]) => ({
+          endpoint,
+          count: stats.count,
+          success: stats.success,
+          errors: stats.errors,
+          avgResponseTime: Math.round(stats.totalTime / stats.count)
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+      
+      // Group by date for daily stats
+      const dailyStats = {};
+      logs.forEach(log => {
+        const date = new Date(log.timestamp).toISOString().split('T')[0];
+        if (!dailyStats[date]) {
+          dailyStats[date] = {
+            requests: 0,
+            success: 0,
+            errors: 0
+          };
+        }
+        dailyStats[date].requests++;
+        if (log.response?.status >= 200 && log.response?.status < 300) {
+          dailyStats[date].success++;
+        } else if (log.response?.status >= 400) {
+          dailyStats[date].errors++;
+        }
+      });
+      
+      const dailyData = Object.entries(dailyStats)
+        .map(([date, stats]) => ({
+          date,
+          requests: stats.requests,
+          success: stats.success,
+          errors: stats.errors
+        }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      
+      res.json({
+        success: true,
+        data: {
+          summary: {
+            totalRequests,
+            successfulRequests,
+            errorRequests,
+            successRate: totalRequests > 0 ? ((successfulRequests / totalRequests) * 100).toFixed(1) : 0,
+            errorRate: totalRequests > 0 ? ((errorRequests / totalRequests) * 100).toFixed(1) : 0,
+            avgResponseTime
+          },
+          topEndpoints,
+          dailyData,
+          timeRange: {
+            start: startDateTime.toISOString(),
+            end: endDateTime.toISOString(),
+            days: Math.ceil((endDateTime - startDateTime) / (1000 * 60 * 60 * 24))
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error in getUserLogStats:', error);
       res.status(500).json({
         success: false,
         error: 'Internal server error'
