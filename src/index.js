@@ -9,6 +9,7 @@ const { ensureCorsHeaders, setCorsHeaders } = require('./middleware/corsMiddlewa
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
 const loggerMiddleware = require('./middleware/loggerMiddleware');
+const limitMiddleware = require('./middleware/limitMiddleware');
 const security = require('./security');
 const { initializeSecurityTables } = require('./utils/security/initializeSecurityTables');
 const EpointTablesSetup = require('./utils/setup/epointTables');
@@ -16,6 +17,12 @@ const AccountTablesSetup = require('./utils/setup/accountTables');
 
 // Load Account Settings routes
 const accountRoutes = require('./routes/accountRoutes');
+
+// Load Usage routes
+const usageRoutes = require('./routes/usageRoutes');
+
+// Load API Usage routes
+const apiUsageRoutes = require('./routes/apiUsageRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -763,7 +770,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // 2. Schema generator API
-app.post('/generate-schema', (req, res) => {
+app.post('/generate-schema', limitMiddleware.checkProjectLimit(), (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
@@ -1207,13 +1214,19 @@ app.get('/my-apis', (req, res) => {
   });
 });
 
+// Usage routes - must be before dynamic API routing
+app.use('/api/usage', usageRoutes);
+
+// API Usage routes - for public API usage tracking
+app.use('/api', apiUsageRoutes);
+
 // Dynamic API routing - verify user has access to the API
 app.use('/api/:apiId', async (req, res, next) => {
   try {
     const apiId = req.params.apiId;
     
-    // Skip this middleware for payment routes, health checks, video routes, and user routes
-    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user') {
+    // Skip this middleware for payment routes, health checks, video routes, user routes, and usage routes
+    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user' || apiId === 'usage') {
       return next();
     }
   
@@ -2015,15 +2028,7 @@ app.use('*', (req, res) => {
     error: 'Endpoint not found',
     message: `The requested endpoint ${req.method} ${req.originalUrl} does not exist`,
     availableEndpoints: [
-      'GET /health',
-      'POST /api/epoint/request',
-      'POST /api/epoint/callback',
-      'POST /api/epoint/check-status',
-      'POST /api/epoint/save-card',
-      'POST /api/epoint/execute-saved-card-payment',
-      'POST /api/epoint/reverse-payment',
-      'POST /api/epoint/pre-auth/create',
-      'POST /api/epoint/pre-auth/complete'
+      'GET /health'
     ]
   });
 });

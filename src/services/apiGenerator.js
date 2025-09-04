@@ -45,6 +45,20 @@ class APIGenerator {
       next();
     });
 
+    // API request limit middleware for public APIs
+    router.use((req, res, next) => {
+      // Only apply to actual API calls (not OPTIONS or debug endpoints)
+      if (req.method === 'OPTIONS' || req.path.includes('/debug') || req.path.includes('/swagger')) {
+        return next();
+      }
+
+      // Get the API limit middleware
+      const apiLimitMiddleware = require('../middleware/apiLimitMiddleware');
+      
+      // Apply API request limit check
+      apiLimitMiddleware.checkApiRequestLimit()(req, res, next);
+    });
+
     // Handle ALL OPTIONS requests immediately for CORS preflight
     router.options('*', (req, res) => {
       const { setCorsHeaders } = require('../middleware/corsMiddleware');

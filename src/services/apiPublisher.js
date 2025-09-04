@@ -163,6 +163,11 @@ class APIPublisher {
     this._removeApiMetadata(apiId);
     return true;
   }
+
+  // Get API metadata by API ID
+  getApiMetadata(apiId) {
+    return this.apiMetadata.get(apiId);
+  }
   
   // Persist API metadata to database
   async _persistApiMetadata(apiId, metadata) {
