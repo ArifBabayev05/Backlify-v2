@@ -5,7 +5,8 @@ const authMiddleware = require('../middleware/authMiddleware');
 const limitMiddleware = require('../middleware/limitMiddleware');
 
 // Get current user's usage information
-router.get('/current', authMiddleware.authenticate, usageController.getCurrentUsage);
+// router.get('/current', authMiddleware.authenticate, usageController.getCurrentUsage);
+router.get('/current', usageController.getCurrentUsage);
 
 // Get all available plans
 router.get('/plans', usageController.getPlans);
