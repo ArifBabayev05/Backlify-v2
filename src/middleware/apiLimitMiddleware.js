@@ -1,169 +1,77 @@
-const ApiUsageService = require('../services/apiUsageService');
+const apiUsageService = require('../services/apiUsageService');
 
 class ApiLimitMiddleware {
-  constructor() {
-    this.apiUsageService = new ApiUsageService();
-  }
-
   /**
-   * Middleware to check API request limits by API ID
-   * @returns {Function} Express middleware function
+   * Check API request limit for public APIs
    */
   checkApiRequestLimit() {
     return async (req, res, next) => {
       try {
-        const apiId = req.params.apiId;
-        
-        if (!apiId) {
+        // Extract API ID from URL
+        const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
+        if (!apiMatch || !apiMatch[1]) {
           return next();
         }
-
-        // Check if API can make the request
-        const checkResult = await this.apiUsageService.canApiMakeRequest(apiId);
-
-        if (!checkResult.allowed) {
+        
+        const apiId = apiMatch[1];
+        const userId = req.headers['x-user-id'] || req.headers['X-User-Id'] || req.XAuthUserId;
+        
+        console.log(`Checking API request limit for API: ${apiId}, User: ${userId}`);
+        
+        // Check if limit is exceeded
+        const limitCheck = await apiUsageService.checkApiRequestLimit(apiId, userId);
+        
+        if (!limitCheck.allowed) {
           return res.status(403).json({
             success: false,
-            message: checkResult.message
+            message: limitCheck.reason,
+            current: limitCheck.current,
+            limit: limitCheck.limit
           });
         }
-
-        // Increment request count
-        await this.apiUsageService.incrementApiRequestCount(apiId);
-
-        // Add usage info to request for logging
-        req.apiUsageInfo = checkResult.usage;
-
+        
         next();
       } catch (error) {
         console.error('Error in API request limit middleware:', error);
-        
-        // Allow request to continue if there's an error checking limits
-        // This prevents the system from breaking if usage service fails
+        // Allow request to continue if there's an error
         next();
       }
     };
   }
 
   /**
-   * Middleware to check API project creation limits
-   * @returns {Function} Express middleware function
+   * Check project limit for /generate-schema endpoint
    */
-  checkApiProjectLimit() {
+  checkProjectLimit() {
     return async (req, res, next) => {
       try {
-        const apiId = req.params.apiId;
+        const userId = req.headers['x-user-id'] || req.headers['X-User-Id'] || req.XAuthUserId;
         
-        if (!apiId) {
-          return next();
-        }
-
-        // Check if API can create a project
-        const checkResult = await this.apiUsageService.canApiCreateProject(apiId);
-
-        if (!checkResult.allowed) {
-          return res.status(403).json({
+        if (!userId) {
+          return res.status(401).json({
             success: false,
-            message: checkResult.message
+            message: 'Authentication required'
           });
         }
-
-        // Increment project count
-        await this.apiUsageService.incrementApiProjectCount(apiId);
-
-        // Add usage info to request for logging
-        req.apiUsageInfo = checkResult.usage;
-
-        next();
-      } catch (error) {
-        console.error('Error in API project limit middleware:', error);
         
-        // Allow request to continue if there's an error checking limits
-        next();
-      }
-    };
-  }
-
-  /**
-   * Middleware to get API usage info without blocking
-   * @returns {Function} Express middleware function
-   */
-  getApiUsageInfo() {
-    return async (req, res, next) => {
-      try {
-        const apiId = req.params.apiId;
+        console.log(`Checking project limit for User: ${userId}`);
         
-        if (!apiId) {
-          return next();
-        }
-
-        // Get usage info without incrementing
-        const usage = await this.apiUsageService.getCurrentApiUsage(apiId);
-        req.apiUsageInfo = usage;
-
-        next();
-      } catch (error) {
-        console.error('Error getting API usage info:', error);
-        next();
-      }
-    };
-  }
-
-  /**
-   * Middleware to check if API owner has any plan (not free)
-   * @returns {Function} Express middleware function
-   */
-  requireApiPaidPlan() {
-    return async (req, res, next) => {
-      try {
-        const apiId = req.params.apiId;
+        // Check if limit is exceeded
+        const limitCheck = await apiUsageService.checkProjectLimit(userId);
         
-        if (!apiId) {
-          return next();
-        }
-
-        const usage = await this.apiUsageService.getCurrentApiUsage(apiId);
-        
-        if (usage.userPlan === 'basic') {
+        if (!limitCheck.allowed) {
           return res.status(403).json({
             success: false,
-            message: 'This feature requires a paid plan. Please upgrade your subscription.'
+            message: limitCheck.reason,
+            current: limitCheck.current,
+            limit: limitCheck.limit
           });
         }
-
+        
         next();
       } catch (error) {
-        console.error('Error checking API paid plan:', error);
-        next();
-      }
-    };
-  }
-
-  /**
-   * Middleware to check if API owner has enterprise plan
-   * @returns {Function} Express middleware function
-   */
-  requireApiEnterprisePlan() {
-    return async (req, res, next) => {
-      try {
-        const apiId = req.params.apiId;
-        
-        if (!apiId) {
-          return next();
-        }
-
-        const usage = await this.apiUsageService.getCurrentApiUsage(apiId);
-        
-        if (usage.userPlan !== 'enterprise') {
-          return res.status(403).json({
-            success: false,
-            message: 'This feature requires an Enterprise plan. Please upgrade your subscription.'
-          });
-        }
-
-        next();
-      } catch (error) {
-        console.error('Error checking API enterprise plan:', error);
+        console.error('Error in project limit middleware:', error);
+        // Allow request to continue if there's an error
         next();
       }
     };

@@ -2,10 +2,14 @@
 
 ## 🎯 **Sistemin Məqsədi**
 
-Bu sistem istifadəçilərin plan limitlərinə əsasən API istifadəsini məhdudlaşdırır. İki növ limit mövcuddur:
+Bu sistem istifadəçilərin plan limitlərinə əsasən API istifadəsini məhdudlaşdırır. **Mövcud `api_logs` table-ından istifadə edərək** istifadə statistikalarını hesablayır.
 
-1. **User Authentication ilə** - İstifadəçi girişi tələb edən endpoint-lər
-2. **API ID ilə** - Public API-lər üçün (external frontend-dən istifadə)
+### **🔧 Sistem Arxitekturası:**
+
+1. **Mövcud `api_logs` table-ından istifadə** - Əlavə table yaratmaq lazım deyil
+2. **Real-time statistikalar** - Hər request avtomatik log edilir
+3. **Plan əsaslı limitlər** - Basic, Pro, Enterprise planları
+4. **İki növ limit:** User authentication və API ID əsaslı
 
 ---
 
@@ -46,19 +50,9 @@ GET /api/user/plans
 }
 ```
 
-**Nə işə yarayır:** İstifadəçilərə mövcud planları göstərmək üçün. Frontend-də plan seçimi komponenti üçün istifadə edilir.
-
----
-
-### **2. User Usage Məlumatları**
+### **2. API Usage Məlumatları (Public API-lər üçün)**
 ```http
-GET /api/usage/current
-```
-
-**Headers:**
-```
-Authorization: Bearer <JWT_TOKEN>
-X-User-Id: <USER_ID>
+GET /api/{apiId}/usage
 ```
 
 **Cavab:**
@@ -66,30 +60,26 @@ X-User-Id: <USER_ID>
 {
   "success": true,
   "data": {
-    "user_id": "user123",
+    "api_id": "0ce9781b-7e2a-450b-a999-e66e6067d623",
+    "user_id": "default",
     "user_plan": "basic",
-    "month_start": "2025-01-01",
-    "requests_count": 150,
-    "projects_count": 1,
+    "month_start": "2025-08-31T20:00:00.000Z",
+    "requests_count": 2,
+    "projects_count": 0,
     "limits": {
-      "max_projects": 2,
-      "max_requests": 1000
+      "projects": 2,
+      "requests": 1000
     },
-    "remaining": {
-      "projects": 1,
-      "requests": 850
-    }
+    "remaining_requests": 998,
+    "remaining_projects": 2
   }
 }
 ```
 
-**Nə işə yarayır:** İstifadəçinin cari aylıq istifadə məlumatlarını göstərmək. Dashboard-da progress bar və limit göstərmək üçün istifadə edilir.
-
----
-
-### **3. API Usage Məlumatları (Public API-lər üçün)**
+### **3. Admin Usage Statistics**
 ```http
-GET /api/{API_ID}/usage
+GET /api/user/usage/stats
+Authorization: Bearer {token}
 ```
 
 **Cavab:**
@@ -97,127 +87,23 @@ GET /api/{API_ID}/usage
 {
   "success": true,
   "data": {
-    "api_id": "abc123",
-    "user_id": "user123", 
-    "user_plan": "pro",
-    "month_start": "2025-01-01",
-    "requests_count": 2500,
-    "projects_count": 3,
-    "limits": {
-      "max_projects": 10,
-      "max_requests": 10000
-    },
-    "remaining": {
-      "projects": 7,
-      "requests": 7500
-    }
+    "month_start": "2025-08-31T20:00:00.000Z",
+    "user_stats": [
+      {
+        "user_id": "user123",
+        "requests_count": 150,
+        "projects_count": 3
+      }
+    ],
+    "api_stats": [
+      {
+        "api_id": "api123",
+        "requests_count": 75,
+        "user_id": "user123"
+      }
+    ],
+    "total_logs": 500
   }
-}
-```
-
-**Nə işə yarayır:** Public API-lərin istifadə məlumatlarını göstərmək. External frontend-dən API istifadə edərkən limit yoxlanması üçün istifadə edilir.
-
----
-
-### **4. API Request (Limit Yoxlanması ilə)**
-```http
-GET /api/{API_ID}/users
-POST /api/{API_ID}/users
-PUT /api/{API_ID}/users/{id}
-DELETE /api/{API_ID}/users/{id}
-```
-
-**Cavab (Normal):**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "name": "John Doe",
-      "email": "john@example.com"
-    }
-  ]
-}
-```
-
-**Cavab (Limit Aşıldıqda):**
-```json
-{
-  "success": false,
-  "message": "Monthly request limit exceeded for your current plan (1000 requests/month)."
-}
-```
-
-**Nə işə yarayır:** Bütün API request-ləri avtomatik olaraq limit yoxlanmasından keçir. Limit aşıldıqda 403 status code ilə xəta mesajı qaytarır.
-
----
-
-### **5. Project Yaradma (Limit Yoxlanması ilə)**
-```http
-POST /generate-schema
-```
-
-**Request Body:**
-```json
-{
-  "prompt": "Create users and products tables",
-  "XAuthUserId": "user123"
-}
-```
-
-**Cavab (Normal):**
-```json
-{
-  "success": true,
-  "XAuthUserId": "user123",
-  "tables": [
-    {
-      "name": "users",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "constraints": ["primary key", "default uuid_generate_v4()"]
-        },
-        {
-          "name": "name",
-          "type": "varchar(255)",
-          "constraints": ["not null"]
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Cavab (Limit Aşıldıqda):**
-```json
-{
-  "success": false,
-  "message": "Project limit exceeded for your current plan (Basic Plan allows max 2 projects)."
-}
-```
-
-**Nə işə yarayır:** Yeni API yaradarkən project limitini yoxlayır. Limit aşıldıqda yeni API yaratmağa icazə vermir.
-
----
-
-## 🚫 **Limit Aşıldıqda Cavablar**
-
-### **Project Limit Aşıldıqda:**
-```json
-{
-  "success": false,
-  "message": "Project limit exceeded for your current plan (Basic Plan allows max 2 projects)."
-}
-```
-
-### **Request Limit Aşıldıqda:**
-```json
-{
-  "success": false,
-  "message": "Monthly request limit exceeded for your current plan (1000 requests/month)."
 }
 ```
 
@@ -227,119 +113,131 @@ POST /generate-schema
 
 | Plan | Projects | Requests/Month | Price |
 |------|----------|----------------|-------|
-| Basic | 2 | 1,000 | $0 |
-| Pro | 10 | 10,000 | $9.99 |
-| Enterprise | Unlimited | Unlimited | $29.99 |
+| **Basic** | 2 | 1,000 | $0 |
+| **Pro** | 10 | 10,000 | $9.99 |
+| **Enterprise** | Unlimited | Unlimited | $29.99 |
 
 ---
 
-## 🎯 **İstifadə Nümunələri**
+## 🔄 **Sistem Necə İşləyir**
 
-### **1. Yeni API Yaradarkən**
+### **1. Request Tracking:**
+- Hər API request avtomatik `api_logs` table-ına yazılır
+- `is_api_request: true` olan request-lər sayılır
+- `status_code >= 200 && < 400` olan request-lər valid sayılır
 
-```bash
-# 1. Schema yarat
-curl -X POST http://localhost:3000/generate-schema \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Create users and products tables", "XAuthUserId": "user123"}'
+### **2. Project Tracking:**
+- `/generate-schema` endpoint çağırışları sayılır
+- Hər uğurlu schema generation = +1 project
 
-# 2. API yarat  
-curl -X POST http://localhost:3000/create-api-from-schema \
-  -H "Content-Type: application/json" \
-  -d '{"tables": [...], "XAuthUserId": "user123"}'
+### **3. Limit Checking:**
+- **API Request-lər:** `api_id` əsasında limit yoxlanılır
+- **Project Request-lər:** `user_id` əsasında limit yoxlanılır
+- **Enterprise plan:** Heç bir limit yoxdur
 
-# 3. API usage yoxla
-curl http://localhost:3000/api/[API_ID]/usage
-```
-
-### **2. Public API İstifadəsi**
-
-```bash
-# API usage məlumatlarını al
-curl http://localhost:3000/api/abc123/usage
-
-# API request göndər
-curl http://localhost:3000/api/abc123/users
-curl http://localhost:3000/api/abc123/products
-```
-
-### **3. User Usage Məlumatları**
-
-```bash
-# User usage məlumatlarını al
-curl http://localhost:3000/api/usage/current \
-  -H "Authorization: Bearer <JWT_TOKEN>" \
-  -H "X-User-Id: user123"
+### **4. Error Responses:**
+```json
+{
+  "success": false,
+  "message": "Monthly request limit exceeded for your current plan (1000 requests/month)",
+  "current": 1001,
+  "limit": 1000
+}
 ```
 
 ---
 
-## 🎯 **Frontend-də İstifadə**
+## 🧪 **Test Nümunələri**
 
-### **1. Plan Seçimi**
-- `/api/user/plans` endpoint-indən plan məlumatlarını al
-- UI-da plan kartları göstər
-- İstifadəçi plan seçəndə limitləri göstər
+### **1. Plan Məlumatlarını Almaq:**
+```bash
+curl http://localhost:3000/api/user/plans
+```
 
-### **2. Usage Dashboard**
-- `/api/usage/current` endpoint-indən usage məlumatlarını al
-- Progress bar ilə limitləri göstər
-- Qalan istifadəni hesabla
+### **2. API Usage Məlumatlarını Almaq:**
+```bash
+curl http://localhost:3000/api/0ce9781b-7e2a-450b-a999-e66e6067d623/usage
+```
 
-### **3. API Request-ləri**
-- Bütün API request-ləri avtomatik limit yoxlanmasından keçir
-- 403 status code alındıqda error mesajı göstər
-- Plan upgrade təklif et
+### **3. Admin Statistics:**
+```bash
+curl -H "Authorization: Bearer {token}" http://localhost:3000/api/user/usage/stats
+```
 
-### **4. Public API İstifadəsi**
-- `/api/{API_ID}/usage` endpoint-indən API usage məlumatlarını al
-- External frontend-dən API istifadə edərkən limit yoxlanması
-- API owner-in plan limitləri əsasında məhdudiyyət
+---
+
+## 🎨 **Frontend İstifadəsi**
+
+### **1. Plan Seçimi:**
+```javascript
+// Plan məlumatlarını göstər
+fetch('/api/user/plans')
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      displayPlans(data.data);
+    }
+  });
+```
+
+### **2. Usage Məlumatlarını Göstərmək:**
+```javascript
+// API usage məlumatlarını göstər
+fetch(`/api/${apiId}/usage`)
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      displayUsageStats(data.data);
+    }
+  });
+```
+
+### **3. Limit Aşımı Handling:**
+```javascript
+// API request göndərərkən error handling
+fetch('/api/my-api/endpoint')
+  .then(response => response.json())
+  .then(data => {
+    if (!data.success && data.message.includes('limit exceeded')) {
+      showUpgradeModal(data.message);
+    }
+  });
+```
 
 ---
 
 ## 🔧 **Konfiqurasiya**
 
-### **Headers**
-```
-Content-Type: application/json
-Authorization: Bearer <JWT_TOKEN>
-X-User-Id: <USER_ID>
-```
+### **Headers:**
+- `X-User-Id` və ya `X-User-Id` - User identification üçün
+- `Authorization: Bearer {token}` - Protected endpoint-lər üçün
+
+
+
+## 📈 **Admin Panel İnteqrasiyası**
+
+Mövcud admin log səhifəsi (`/admin/logs`) ilə uyğunlaşdırılmışdır:
+
+1. **Real-time monitoring** - Hər request avtomatik log edilir
+2. **User journey tracking** - İstifadəçi fəaliyyətləri izlənilir
+3. **API performance** - Response time və status code-lar
+4. **Usage analytics** - Plan əsaslı istifadə statistikaları
 
 ---
 
-## 📝 **Əlavə Qeydlər**
+## 🚀 **Növbəti Addımlar**
 
-1. **CORS:** Bütün endpoint-lər CORS dəstəkləyir
-2. **Authentication:** JWT token və ya X-User-Id header istifadə edin
-3. **Rate Limiting:** Hər endpoint üçün rate limit mövcuddur
-4. **Error Handling:** Bütün xətalar JSON formatında qaytarılır
-5. **Monitoring:** Bütün request-lər log edilir
-6. **Aylıq Reset:** Hər ayın əvvəlində usage counter-ləri sıfırlanır
+1. **Frontend-də plan seçimi** - User plan upgrade interface
+2. **Usage dashboard** - Real-time usage göstəriciləri
+3. **Notification system** - Limit yaxınlaşdıqda bildiriş
+4. **Billing integration** - Plan upgrade və ödəniş
 
 ---
 
-## 🚀 **Sistem Xüsusiyyətləri**
+## ⚠️ **Qeydlər**
 
-### **Avtomatik Limit Yoxlanması**
-- Bütün API request-ləri avtomatik olaraq limit yoxlanmasından keçir
-- Project yaradarkən project limitini yoxlayır
-- Aylıq request limitini yoxlayır
-
-### **Real-time Usage Tracking**
-- Hər request-də usage counter-ləri yenilənir
-- Aylıq reset avtomatik olaraq həyata keçirilir
-- Enterprise plan istifadəçiləri üçün məhdudiyyət yoxdur
-
-### **Flexible Authentication**
-- JWT token ilə authentication
-- X-User-Id header ilə user identification
-- Public API-lər üçün API ID əsaslı limit yoxlanması
-
-### **Comprehensive Error Handling**
-- Aydın error mesajları
-- HTTP status code-ları ilə error növləri
-- JSON formatında structured responses
-
-Bu sistem tam hazırdır və production mühitində istifadə edilə bilər! 🚀
+- **Əlavə table yaratmaq lazım deyil** - Mövcud `api_logs` table-ından istifadə
+- **Real-time tracking** - Hər request avtomatik sayılır
+- **Monthly reset** - Hər ayın əvvəlində avtomatik sıfırlanır
+- **Enterprise plan** - Heç bir limit yoxdur
+- **Error handling** - Limit aşımında 403 status code qaytarılır

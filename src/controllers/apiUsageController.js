@@ -1,52 +1,46 @@
-const ApiUsageService = require('../services/apiUsageService');
+const apiUsageService = require('../services/apiUsageService');
 const PlanService = require('../services/planService');
 
 class ApiUsageController {
   constructor() {
-    this.apiUsageService = new ApiUsageService();
     this.planService = new PlanService();
   }
 
   /**
-   * Get current API's usage information
-   * @route GET /api/:apiId/usage
+   * Get API usage information
    */
   async getApiUsage(req, res) {
     try {
-      const apiId = req.params.apiId;
+      const { apiId } = req.params;
+      const userId = req.headers['x-user-id'] || req.headers['X-User-Id'] || req.XAuthUserId;
       
-      if (!apiId) {
-        return res.status(400).json({
+      console.log(`Getting API usage for API: ${apiId}, User: ${userId}`);
+      
+      const stats = await apiUsageService.getApiUsageStats(apiId, userId);
+      
+      if (!stats) {
+        return res.status(500).json({
           success: false,
-          message: 'API ID is required'
+          message: 'Failed to get API usage information'
         });
       }
-
-      const usage = await this.apiUsageService.getCurrentApiUsage(apiId);
-      const plan = await this.planService.getPlanById(usage.userPlan);
-
+      
+      // Get user plan and limits
+      const userPlan = await apiUsageService.getUserPlan(userId);
+      const limits = apiUsageService.getPlanLimits(userPlan);
+      
       res.json({
         success: true,
         data: {
-          api: {
-            id: apiId,
-            owner_id: usage.userId,
-            plan_id: usage.userPlan,
-            plan_name: plan?.name || 'Unknown Plan'
-          },
-          usage: {
-            requests_count: usage.requestsCount,
-            projects_count: usage.projectsCount,
-            max_requests: usage.maxRequests,
-            max_projects: usage.maxProjects,
-            is_unlimited: usage.isUnlimited
-          },
-          limits: {
-            requests_remaining: usage.isUnlimited ? 'Unlimited' : Math.max(0, usage.maxRequests - usage.requestsCount),
-            projects_remaining: usage.isUnlimited ? 'Unlimited' : Math.max(0, usage.maxProjects - usage.projectsCount),
-            requests_percentage: usage.isUnlimited ? 0 : Math.round((usage.requestsCount / usage.maxRequests) * 100),
-            projects_percentage: usage.isUnlimited ? 0 : Math.round((usage.projectsCount / usage.maxProjects) * 100)
-          }
+          api_id: apiId,
+          user_id: userId,
+          user_plan: userPlan,
+          month_start: stats.month_start,
+          requests_count: stats.requests_count,
+          projects_count: stats.projects_count,
+          limits: limits,
+          remaining_requests: limits.requests === -1 ? -1 : Math.max(0, limits.requests - stats.requests_count),
+          remaining_projects: limits.projects === -1 ? -1 : Math.max(0, limits.projects - stats.projects_count)
         }
       });
     } catch (error) {
@@ -60,17 +54,10 @@ class ApiUsageController {
 
   /**
    * Get all available plans
-   * @route GET /api/plans
    */
   async getPlans(req, res) {
     try {
       console.log('Getting plans...');
-      console.log('this.planService:', this.planService);
-      
-      if (!this.planService) {
-        throw new Error('planService is not initialized');
-      }
-      
       const plans = await this.planService.getPlans();
       console.log('Plans received:', plans);
       
@@ -80,95 +67,56 @@ class ApiUsageController {
       });
     } catch (error) {
       console.error('Error getting plans:', error);
-      console.error('Full error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to get plans information',
-        error: error.message
+        message: 'Failed to get plans information'
       });
     }
   }
 
   /**
-   * Get API usage statistics (admin only)
-   * @route GET /api/usage/stats
+   * Get usage statistics (admin only)
    */
   async getApiUsageStats(req, res) {
     try {
-      if (!req.user || !req.user.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
-      }
-
-      // Check if user is admin (you can implement your own admin check)
-      const isAdmin = req.user.role === 'admin' || req.user.plan_id === 'enterprise';
+      const stats = await apiUsageService.getAdminUsageStats();
       
-      if (!isAdmin) {
-        return res.status(403).json({
+      if (!stats) {
+        return res.status(500).json({
           success: false,
-          message: 'Admin access required'
+          message: 'Failed to get usage statistics'
         });
       }
-
-      const userId = req.query.user_id || null;
-      const stats = await this.apiUsageService.getApiUsageStats(userId);
-
+      
       res.json({
         success: true,
         data: stats
       });
     } catch (error) {
-      console.error('Error getting API usage stats:', error);
+      console.error('Error getting usage stats:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to get API usage statistics'
+        message: 'Failed to get usage statistics'
       });
     }
   }
 
   /**
-   * Reset monthly API usage (admin only)
-   * @route POST /api/usage/reset
+   * Reset monthly usage (admin only)
    */
   async resetMonthlyApiUsage(req, res) {
     try {
-      if (!req.user || !req.user.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
-      }
-
-      // Check if user is admin
-      const isAdmin = req.user.role === 'admin' || req.user.plan_id === 'enterprise';
-      
-      if (!isAdmin) {
-        return res.status(403).json({
-          success: false,
-          message: 'Admin access required'
-        });
-      }
-
-      const success = await this.apiUsageService.resetMonthlyApiUsage();
-
-      if (success) {
-        res.json({
-          success: true,
-          message: 'Monthly API usage reset successfully'
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to reset monthly API usage'
-        });
-      }
+      // This would typically reset counters, but since we're using api_logs
+      // we don't need to reset anything - just return success
+      res.json({
+        success: true,
+        message: 'Usage statistics are automatically reset monthly based on api_logs'
+      });
     } catch (error) {
-      console.error('Error resetting monthly API usage:', error);
+      console.error('Error resetting usage:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to reset monthly API usage'
+        message: 'Failed to reset usage'
       });
     }
   }
