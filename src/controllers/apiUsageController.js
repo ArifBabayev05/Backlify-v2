@@ -64,7 +64,15 @@ class ApiUsageController {
    */
   async getPlans(req, res) {
     try {
+      console.log('Getting plans...');
+      console.log('this.planService:', this.planService);
+      
+      if (!this.planService) {
+        throw new Error('planService is not initialized');
+      }
+      
       const plans = await this.planService.getPlans();
+      console.log('Plans received:', plans);
       
       res.json({
         success: true,
@@ -72,9 +80,11 @@ class ApiUsageController {
       });
     } catch (error) {
       console.error('Error getting plans:', error);
+      console.error('Full error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to get plans information'
+        message: 'Failed to get plans information',
+        error: error.message
       });
     }
   }

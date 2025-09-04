@@ -31,6 +31,7 @@ class PlanService {
       throw new Error('Invalid response from plans API');
     } catch (error) {
       console.error('Error fetching plans:', error.message);
+      console.error('Full error:', error);
       
       // Return fallback plans if API fails
       return this.getFallbackPlans();

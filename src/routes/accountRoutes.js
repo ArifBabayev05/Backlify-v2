@@ -2,6 +2,7 @@ const express = require('express');
 const AccountController = require('../controllers/accountController');
 const { setCorsHeaders } = require('../middleware/corsMiddleware');
 const { protectedRoute } = require('../middleware/authMiddleware');
+const apiUsageController = require('../controllers/apiUsageController');
 
 const router = express.Router();
 const accountController = new AccountController();
@@ -113,5 +114,28 @@ router.get('/notifications/settings', protectedRoute(), accountController.getNot
  * @access Protected
  */
 router.put('/notifications/settings', protectedRoute(), accountController.updateNotificationSettings.bind(accountController));
+
+// ========== API USAGE ROUTES ==========
+
+/**
+ * @route GET /api/user/plans
+ * @desc Get all available plans
+ * @access Public
+ */
+router.get('/plans', apiUsageController.getPlans.bind(apiUsageController));
+
+/**
+ * @route GET /api/user/usage/stats
+ * @desc Get usage statistics (admin only)
+ * @access Protected
+ */
+router.get('/usage/stats', protectedRoute(), apiUsageController.getApiUsageStats.bind(apiUsageController));
+
+/**
+ * @route POST /api/user/usage/reset
+ * @desc Reset monthly usage (admin only)
+ * @access Protected
+ */
+router.post('/usage/reset', protectedRoute(), apiUsageController.resetMonthlyApiUsage.bind(apiUsageController));
 
 module.exports = router;

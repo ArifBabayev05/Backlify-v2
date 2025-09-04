@@ -21,9 +21,6 @@ const accountRoutes = require('./routes/accountRoutes');
 // Load Usage routes
 const usageRoutes = require('./routes/usageRoutes');
 
-// Load API Usage routes
-const apiUsageRoutes = require('./routes/apiUsageRoutes');
-
 // Load environment variables
 dotenv.config();
 
@@ -1217,9 +1214,6 @@ app.get('/my-apis', (req, res) => {
 // Usage routes - must be before dynamic API routing
 app.use('/api/usage', usageRoutes);
 
-// API Usage routes - for public API usage tracking
-app.use('/api', apiUsageRoutes);
-
 // Dynamic API routing - verify user has access to the API
 app.use('/api/:apiId', async (req, res, next) => {
   try {
@@ -1230,6 +1224,24 @@ app.use('/api/:apiId', async (req, res, next) => {
       return next();
     }
   
+  // Handle API usage endpoint
+  if (req.path === '/usage' && req.method === 'GET') {
+    console.log(`Handling API usage request for API: ${apiId}`);
+    setCorsHeaders(res);
+    
+    try {
+      const apiUsageController = require('./controllers/apiUsageController');
+      req.params.apiId = apiId;
+      return apiUsageController.getApiUsage(req, res);
+    } catch (error) {
+      console.error('Error handling API usage request:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to get API usage information'
+      });
+    }
+  }
+
   // Skip authentication for Swagger UI and docs
   if (req.path.includes('/docs') || req.path.includes('/swagger.json')) {
     console.log(`Skipping authentication for documentation path: ${req.path}`);
