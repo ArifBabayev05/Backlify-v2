@@ -14,18 +14,22 @@ const { initializeSecurityTables } = require('./utils/security/initializeSecurit
 const EpointTablesSetup = require('./utils/setup/epointTables');
 const AccountTablesSetup = require('./utils/setup/accountTables');
 
+// Load Account Settings routes
+const accountRoutes = require('./routes/accountRoutes');
+
 // Load environment variables
 dotenv.config();
 
-// Import the configured app from app.js
-const app = require('./app');
+// Initialize express app
+const app = express();
 
 // Supabase client setup
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
-// Security middleware and auth routes are already configured in app.js
+security.applySecurityMiddleware(app);
+security.setupAuthRoutes(app);
 
 // Verify database connectivity at startup
 async function checkDatabase() {
@@ -1208,8 +1212,8 @@ app.use('/api/:apiId', async (req, res, next) => {
   try {
     const apiId = req.params.apiId;
     
-    // Skip this middleware for payment routes, health checks, and video routes
-    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video') {
+    // Skip this middleware for payment routes, health checks, video routes, and user routes
+    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user') {
       return next();
     }
   
@@ -2000,6 +2004,9 @@ app.use((error, req, res, next) => {
     ...(isDevelopment && { stack: error.stack })
   });
 });
+
+// Setup Account Settings routes
+app.use('/api/user', accountRoutes);
 
 // 404 handler for undefined routes
 app.use('*', (req, res) => {

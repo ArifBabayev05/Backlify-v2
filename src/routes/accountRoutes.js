@@ -19,6 +19,32 @@ router.options('*', (req, res) => {
 });
 
 /**
+ * @route GET /api/user/health
+ * @desc Test endpoint to check if account routes are working
+ * @access Public
+ */
+router.get('/health', (req, res) => {
+  setCorsHeaders(res, req);
+  res.json({
+    success: true,
+    message: 'Account routes are working!',
+    timestamp: new Date().toISOString(),
+    routes: [
+      'GET /api/user/profile',
+      'PUT /api/user/profile', 
+      'PUT /api/user/change-password',
+      'GET /api/user/subscription',
+      'POST /api/user/subscription/upgrade',
+      'GET /api/user/usage',
+      'GET /api/user/logs',
+      'GET /api/user/logs/stats',
+      'GET /api/user/notifications/settings',
+      'PUT /api/user/notifications/settings'
+    ]
+  });
+});
+
+/**
  * @route GET /api/user/profile
  * @desc Get user profile information
  * @access Protected

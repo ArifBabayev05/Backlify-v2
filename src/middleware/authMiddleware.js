@@ -237,6 +237,7 @@ class AuthenticationMiddleware {
     // Public health check
     this.addPublicRoute('GET', '/health');
     this.addPublicRoute('GET', '/api/health');
+    this.addPublicRoute('GET', '/api/user/health');
     
     // Public Swagger documentation routes
     this.addPublicRoute('GET', '/api/*/docs');
