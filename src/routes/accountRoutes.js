@@ -92,14 +92,14 @@ router.get('/usage', protectedRoute(), accountController.getApiUsage.bind(accoun
  * @desc Get request logs
  * @access Protected
  */
-router.get('/logs', protectedRoute(), accountController.getRequestLogs.bind(accountController));
+router.get('/logs', accountController.getRequestLogs.bind(accountController));
 
 /**
  * @route GET /api/user/logs/stats
  * @desc Get user log statistics
  * @access Protected
  */
-router.get('/logs/stats', protectedRoute(), accountController.getUserLogStats.bind(accountController));
+router.get('/logs/stats', accountController.getUserLogStats.bind(accountController));
 
 /**
  * @route GET /api/user/notifications/settings
