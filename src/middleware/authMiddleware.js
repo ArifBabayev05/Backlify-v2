@@ -265,8 +265,8 @@ class AuthenticationMiddleware {
     this.addProtectedRoute('GET', '/api/user/subscription');
     this.addProtectedRoute('POST', '/api/user/subscription/upgrade');
     this.addProtectedRoute('GET', '/api/user/usage');
-    this.addPublicRoute('GET', '/api/user/logs');
-    this.addPublicRoute('GET', '/api/user/logs/stats');
+    this.addProtectedRoute('GET', '/api/user/logs');
+    this.addProtectedRoute('GET', '/api/user/logs/stats');
     this.addProtectedRoute('GET', '/api/user/notifications/settings');
     this.addProtectedRoute('PUT', '/api/user/notifications/settings');
   }
