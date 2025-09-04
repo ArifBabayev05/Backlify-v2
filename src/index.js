@@ -17,16 +17,15 @@ const AccountTablesSetup = require('./utils/setup/accountTables');
 // Load environment variables
 dotenv.config();
 
-// Initialize express app
-const app = express();
+// Import the configured app from app.js
+const app = require('./app');
 
 // Supabase client setup
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
-security.applySecurityMiddleware(app);
-security.setupAuthRoutes(app);
+// Security middleware and auth routes are already configured in app.js
 
 // Verify database connectivity at startup
 async function checkDatabase() {
