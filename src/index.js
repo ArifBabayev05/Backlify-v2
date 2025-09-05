@@ -304,109 +304,110 @@ app.post('/auth/register', async (req, res) => {
 });
 // Add an endpoint to view logs
 // Add an endpoint to view logs
-app.get('/admin/logs', async (req, res) => {
-  setCorsHeaders(res, req);
-  
-  try {
-    // Create a Supabase client
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-    
-    // Get filter params
-    const { 
-      page = 1, 
-      limit = 5000, 
-      user, 
-      endpoint, 
-      method,
-      status,
-      from_date,
-      to_date,
-      min_time,
-      max_time
-    } = req.query;
-    
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    
-    // Build the query
-    let query = supabase
-      .from('api_logs')
-      .select('*', { count: 'exact' });
-    
-    // Apply filters if provided
-    if (user) {
-      query = query.eq('XAuthUserId', user);
+app.get('/admin/logs', async (req, res) => { 
+  setCorsHeaders(res, req); 
+   
+  try { 
+    // Create a Supabase client 
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY); 
+     
+    // Get filter params 
+    const {  
+      page = 1,  
+      user,  
+      XAuthUserId, 
+      endpoint,  
+      method, 
+      status, 
+      from_date, 
+      to_date, 
+      min_time, 
+      max_time 
+    } = req.query; 
+     
+    // Build the query 
+    let query = supabase 
+      .from('api_logs') 
+      .select('*', { count: 'exact' }); 
+     
+    // XAuthUserId filtri - məcburi olaraq tətbiq edilir
+    if (XAuthUserId) { 
+      query = query.eq('XAuthUserId', XAuthUserId); 
+    } else if (user) {
+      query = query.eq('XAuthUserId', user); 
+    } else {
+      // Əgər heç bir user filter göndərilməyibsə, boş nəticə qaytarırıq
+      // və ya default olaraq Admin loglarını gizlədirik
+      query = query.neq('XAuthUserId', 'Admin'); 
     }
-    
-    if (endpoint) {
-      query = query.ilike('endpoint', `%${endpoint}%`);
-    }
-    
-    if (method) {
-      query = query.eq('method', method.toUpperCase());
-    }
-    
-    if (status) {
-      // Extract status from the JSONB response field
-      query = query.eq('response->status', parseInt(status));
-    }
-    
-    if (from_date) {
-      query = query.gte('timestamp', from_date);
-    }
-    
-    if (to_date) {
-      query = query.lte('timestamp', to_date);
-    }
-    
-    if (min_time) {
-      query = query.gte('response_time_ms', parseInt(min_time));
-    }
-    
-    if (max_time) {
-      query = query.lte('response_time_ms', parseInt(max_time));
-    }
-    
-    // Apply pagination
-    query = query.order('timestamp', { ascending: false })
-      .range(offset, offset + parseInt(limit) - 1);
-    
-    // Execute the query
-    const { data: logs, error, count } = await query;
-    
-    if (error) {
-      return res.status(500).json({ 
-        error: 'Failed to retrieve logs', 
-        details: error.message 
-      });
-    }
-    
-    // Return the logs with pagination info
-    res.json({
-      logs,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: count || 0,
-        pages: Math.ceil((count || 0) / parseInt(limit))
-      },
-      filters: {
-        user,
-        endpoint,
-        method,
-        status,
-        from_date,
-        to_date,
-        min_time,
-        max_time
-      }
-    });
-  } catch (error) {
-    console.error('Error retrieving logs:', error);
-    res.status(500).json({ 
-      error: 'Failed to retrieve logs',
-      details: error.message
-    });
-  }
+     
+    // Apply other filters 
+    if (endpoint) { 
+      query = query.ilike('endpoint', `%${endpoint}%`); 
+    } 
+     
+    if (method) { 
+      query = query.eq('method', method.toUpperCase()); 
+    } 
+     
+    if (status) { 
+      // Extract status from the JSONB response field 
+      query = query.eq('response->status', parseInt(status)); 
+    } 
+     
+    if (from_date) { 
+      query = query.gte('timestamp', from_date); 
+    } 
+     
+    if (to_date) { 
+      query = query.lte('timestamp', to_date); 
+    } 
+     
+    if (min_time) { 
+      query = query.gte('response_time_ms', parseInt(min_time)); 
+    } 
+     
+    if (max_time) { 
+      query = query.lte('response_time_ms', parseInt(max_time)); 
+    } 
+     
+    // Order by timestamp - limit aradan qaldırıldı
+    query = query.order('timestamp', { ascending: false }); 
+     
+    // Execute the query 
+    const { data: logs, error, count } = await query; 
+     
+    if (error) { 
+      console.error('Query error:', error); 
+      return res.status(500).json({  
+        error: 'Failed to retrieve logs',  
+        details: error.message  
+      }); 
+    } 
+     
+    // Return the logs with info
+    res.json({ 
+      logs, 
+      total: count || 0,
+      filters: { 
+        user, 
+        XAuthUserId,
+        endpoint, 
+        method, 
+        status, 
+        from_date, 
+        to_date, 
+        min_time, 
+        max_time 
+      } 
+    }); 
+  } catch (error) { 
+    console.error('Error retrieving logs:', error); 
+    res.status(500).json({  
+      error: 'Failed to retrieve logs', 
+      details: error.message 
+    }); 
+  } 
 });
 
 // Add an endpoint to get log statistics
