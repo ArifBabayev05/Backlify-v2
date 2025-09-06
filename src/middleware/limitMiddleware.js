@@ -1,8 +1,8 @@
-const UsageService = require('../services/usageService');
+const ApiUsageService = require('../services/apiUsageService');
 
 class LimitMiddleware {
   constructor() {
-    this.usageService = new UsageService();
+    this.apiUsageService = new ApiUsageService();
   }
 
   /**
@@ -20,21 +20,39 @@ class LimitMiddleware {
         const userId = req.user.id;
         const userPlan = req.user.plan_id || 'basic';
 
+        // For API request limits, we need to extract API ID
+        const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
+        if (!apiMatch || !apiMatch[1]) {
+          return next();
+        }
+        
+        const apiId = apiMatch[1];
+        
         // Check if user can make the request
-        const checkResult = await this.usageService.canMakeRequest(userId, userPlan);
+        const checkResult = await this.apiUsageService.checkApiRequestLimit(apiId, userId);
 
         if (!checkResult.allowed) {
           return res.status(403).json({
             success: false,
-            message: checkResult.message
+            message: checkResult.reason
           });
         }
 
-        // Increment request count
-        await this.usageService.incrementRequestCount(userId, userPlan);
+        // Store API info for later increment
+        req.apiId = apiId;
+        req.userId = userId;
 
-        // Add usage info to request for logging
-        req.usageInfo = checkResult.usage;
+        // Intercept the response to increment count on success
+        const originalSend = res.send;
+        res.send = function(data) {
+          // Only increment if response is successful (2xx status)
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Increment asynchronously without blocking response
+            this.apiUsageService.incrementApiRequestCount(req.apiId, req.userId, req)
+              .catch(error => console.error('Error incrementing API request count:', error));
+          }
+          return originalSend.call(this, data);
+        }.bind(this);
 
         next();
       } catch (error) {
@@ -84,12 +102,12 @@ class LimitMiddleware {
         console.log(`Checking project limit for User: ${userId}, Plan: ${userPlan}`);
 
         // Check if user can create a project
-        const checkResult = await this.usageService.canCreateProject(userId, userPlan);
+        const checkResult = await this.apiUsageService.checkProjectLimit(userId);
 
         if (!checkResult.allowed) {
           return res.status(403).json({
             success: false,
-            message: checkResult.message
+            message: checkResult.reason
           });
         }
 
@@ -103,14 +121,14 @@ class LimitMiddleware {
           // Only increment if response is successful (2xx status)
           if (res.statusCode >= 200 && res.statusCode < 300) {
             // Increment asynchronously without blocking response
-            this.usageService.incrementProjectCount(req.userId, req.userPlan)
+            this.apiUsageService.incrementProjectCount(req.userId)
               .catch(error => console.error('Error incrementing project count:', error));
           }
           return originalSend.call(this, data);
         }.bind(this);
 
         // Add usage info to request for logging
-        req.usageInfo = checkResult.usage;
+        req.usageInfo = checkResult;
 
         next();
       } catch (error) {
@@ -139,34 +157,42 @@ class LimitMiddleware {
         const userPlan = req.user.plan_id || 'basic';
 
         // Check project limit first
-        const projectCheck = await this.usageService.canCreateProject(userId, userPlan);
+        const projectCheck = await this.apiUsageService.checkProjectLimit(userId);
         if (!projectCheck.allowed) {
           return res.status(403).json({
             success: false,
-            message: projectCheck.message
+            message: projectCheck.reason
           });
         }
 
-        // Check request limit
-        const requestCheck = await this.usageService.canMakeRequest(userId, userPlan);
-        if (!requestCheck.allowed) {
-          return res.status(403).json({
-            success: false,
-            message: requestCheck.message
-          });
+        // For request limit, we need API ID
+        const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
+        if (apiMatch && apiMatch[1]) {
+          const apiId = apiMatch[1];
+          const requestCheck = await this.apiUsageService.checkApiRequestLimit(apiId, userId);
+          if (!requestCheck.allowed) {
+            return res.status(403).json({
+              success: false,
+              message: requestCheck.reason
+            });
+          }
         }
 
-        // Increment both counters
-        await Promise.all([
-          this.usageService.incrementProjectCount(userId, userPlan),
-          this.usageService.incrementRequestCount(userId, userPlan)
-        ]);
+        // Store user info for later increment
+        req.userId = userId;
+        req.userPlan = userPlan;
 
-        // Add usage info to request for logging
-        req.usageInfo = {
-          ...projectCheck.usage,
-          requestsCount: requestCheck.usage.requestsCount
-        };
+        // Intercept the response to increment counts on success
+        const originalSend = res.send;
+        res.send = function(data) {
+          // Only increment if response is successful (2xx status)
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Increment asynchronously without blocking response
+            this.apiUsageService.incrementProjectCount(req.userId)
+              .catch(error => console.error('Error incrementing project count:', error));
+          }
+          return originalSend.call(this, data);
+        }.bind(this);
 
         next();
       } catch (error) {
