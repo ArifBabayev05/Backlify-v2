@@ -29,7 +29,7 @@ class ApiUsageService {
       }
       
       if (userId) {
-        query = query.eq('XAuthUserId', userId);
+        query = query.eq('user_id', userId);
       }
       
       const { data, error } = await query;
