@@ -1,8 +1,8 @@
-const ApiUsageService = require('../services/apiUsageService');
+const apiUsageService = require('../services/apiUsageService');
 
 class LimitMiddleware {
   constructor() {
-    this.apiUsageService = new ApiUsageService();
+    this.apiUsageService = apiUsageService;
   }
 
   /**
