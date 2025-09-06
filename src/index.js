@@ -970,7 +970,7 @@ app.post('/modify-schema', (req, res) => {
 });
 
 // 3. API generator from schema
-app.post('/create-api-from-schema', async (req, res) => {
+app.post('/create-api-from-schema', limitMiddleware.checkProjectLimit(), async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   

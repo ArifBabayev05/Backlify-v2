@@ -53,14 +53,35 @@ class LimitMiddleware {
    */
   checkProjectLimit() {
     return async (req, res, next) => {
+      console.log('🔍 Project limit middleware called for:', req.method, req.originalUrl);
       try {
-        // Skip if no user (public endpoints)
-        if (!req.user || !req.user.id) {
+        // Get user ID from various sources (headers, body, or req.user)
+        const userId = req.user?.id || 
+                      req.headers['x-user-id'] || 
+                      req.headers['X-User-Id'] || 
+                      req.body?.XAuthUserId ||
+                      req.XAuthUserId;
+
+        // Skip if no user ID found
+        if (!userId) {
+          console.log('No user ID found, skipping project limit check');
+          console.log('Available sources:', {
+            'req.user?.id': req.user?.id,
+            'req.headers[x-user-id]': req.headers['x-user-id'],
+            'req.headers[X-User-Id]': req.headers['X-User-Id'],
+            'req.body?.XAuthUserId': req.body?.XAuthUserId,
+            'req.XAuthUserId': req.XAuthUserId
+          });
           return next();
         }
 
-        const userId = req.user.id;
-        const userPlan = req.user.plan_id || 'basic';
+        // Get user plan from headers or default to basic
+        const userPlan = req.user?.plan_id || 
+                        req.headers['x-user-plan'] || 
+                        req.headers['X-User-Plan'] || 
+                        'basic';
+
+        console.log(`Checking project limit for User: ${userId}, Plan: ${userPlan}`);
 
         // Check if user can create a project
         const checkResult = await this.usageService.canCreateProject(userId, userPlan);
@@ -72,8 +93,21 @@ class LimitMiddleware {
           });
         }
 
-        // Increment project count
-        await this.usageService.incrementProjectCount(userId, userPlan);
+        // Store user info for later increment
+        req.userId = userId;
+        req.userPlan = userPlan;
+
+        // Intercept the response to increment project count on success
+        const originalSend = res.send;
+        res.send = function(data) {
+          // Only increment if response is successful (2xx status)
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Increment asynchronously without blocking response
+            this.usageService.incrementProjectCount(req.userId, req.userPlan)
+              .catch(error => console.error('Error incrementing project count:', error));
+          }
+          return originalSend.call(this, data);
+        }.bind(this);
 
         // Add usage info to request for logging
         req.usageInfo = checkResult.usage;

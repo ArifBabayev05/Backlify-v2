@@ -30,6 +30,22 @@ class ApiLimitMiddleware {
           });
         }
         
+        // Store API info for later increment
+        req.apiId = apiId;
+        req.userId = userId;
+        
+        // Intercept the response to increment count on success
+        const originalSend = res.send;
+        res.send = function(data) {
+          // Only increment if response is successful (2xx status)
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Increment asynchronously without blocking response
+            apiUsageService.incrementApiRequestCount(req.apiId, req.userId, req)
+              .catch(error => console.error('Error incrementing API request count:', error));
+          }
+          return originalSend.call(this, data);
+        };
+        
         next();
       } catch (error) {
         console.error('Error in API request limit middleware:', error);
@@ -67,6 +83,21 @@ class ApiLimitMiddleware {
             limit: limitCheck.limit
           });
         }
+        
+        // Store user info for later increment
+        req.userId = userId;
+        
+        // Intercept the response to increment project count on success
+        const originalSend = res.send;
+        res.send = function(data) {
+          // Only increment if response is successful (2xx status)
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Increment asynchronously without blocking response
+            apiUsageService.incrementProjectCount(req.userId)
+              .catch(error => console.error('Error incrementing project count:', error));
+          }
+          return originalSend.call(this, data);
+        };
         
         next();
       } catch (error) {

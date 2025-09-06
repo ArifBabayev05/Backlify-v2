@@ -168,6 +168,104 @@ class ApiUsageService {
   }
 
   /**
+   * Increment API request count for a user
+   */
+  async incrementApiRequestCount(apiId, userId, req) {
+    try {
+      if (!userId) return;
+      
+      const userPlan = await this.getUserPlan(userId);
+      const limits = this.getPlanLimits(userPlan);
+      
+      // Enterprise plan has unlimited access
+      if (userPlan === 'enterprise') {
+        return;
+      }
+      
+      // Get current usage
+      const stats = await this.getApiUsageStats(apiId, userId);
+      if (!stats) {
+        console.log('Unable to get usage stats for increment');
+        return;
+      }
+      
+      // Check if limit would be exceeded
+      if (stats.requests_count >= limits.requests) {
+        console.log(`API request limit would be exceeded for user ${userId}`);
+        return;
+      }
+      
+      // Log the API request (this will be counted in the stats)
+      const { error } = await this.supabase
+        .from('api_logs')
+        .insert({
+          api_id: apiId,
+          user_id: userId,
+          endpoint: req?.originalUrl || '/api/request',
+          method: req?.method || 'GET',
+          status_code: 200,
+          is_api_request: true,
+          timestamp: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error('Error logging API request:', error);
+      }
+    } catch (error) {
+      console.error('Error incrementing API request count:', error);
+    }
+  }
+
+  /**
+   * Increment project count for a user
+   */
+  async incrementProjectCount(userId) {
+    try {
+      if (!userId) return;
+      
+      const userPlan = await this.getUserPlan(userId);
+      const limits = this.getPlanLimits(userPlan);
+      
+      // Enterprise plan has unlimited access
+      if (userPlan === 'enterprise') {
+        return;
+      }
+      
+      // Get current usage
+      const stats = await this.getApiUsageStats(null, userId);
+      if (!stats) {
+        console.log('Unable to get usage stats for project increment');
+        return;
+      }
+      
+      // Check if limit would be exceeded
+      if (stats.projects_count >= limits.projects) {
+        console.log(`Project limit would be exceeded for user ${userId}`);
+        return;
+      }
+      
+      // Log the project creation (this will be counted in the stats)
+      const { error } = await this.supabase
+        .from('api_logs')
+        .insert({
+          api_id: null,
+          user_id: userId,
+          endpoint: '/generate-schema',
+          method: 'POST',
+          status_code: 200,
+          is_api_request: false,
+          timestamp: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error('Error logging project creation:', error);
+      }
+    } catch (error) {
+      console.error('Error incrementing project count:', error);
+    }
+  }
+
+  /**
    * Get usage statistics for admin
    */
   async getAdminUsageStats() {
