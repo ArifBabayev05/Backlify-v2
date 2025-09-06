@@ -74,15 +74,31 @@ class LimitMiddleware {
       console.log('🔍 Project limit middleware called for:', req.method, req.originalUrl);
       try {
         // Get user ID from various sources (headers, body, or req.user)
-        const userId = req.user?.id || 
-                      req.headers['x-user-id'] || 
-                      req.headers['X-User-Id'] || 
-                      req.body?.XAuthUserId ||
-                      req.XAuthUserId;
+        let userId = req.user?.id || 
+                    req.headers['x-user-id'] || 
+                    req.headers['X-User-Id'] || 
+                    req.body?.XAuthUserId ||
+                    req.XAuthUserId;
+
+        // If no user ID found, try to extract from JWT token
+        if (!userId) {
+          const authHeader = req.headers.authorization;
+          const token = authHeader && authHeader.split(' ')[1];
+          
+          if (token) {
+            try {
+              const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+              userId = payload.username || payload.user_id || payload.id;
+              console.log('✅ Extracted user ID from JWT token:', userId);
+            } catch (error) {
+              console.log('❌ Error parsing JWT token:', error.message);
+            }
+          }
+        }
 
         // Skip if no user ID found
         if (!userId) {
-          console.log('No user ID found, skipping project limit check');
+          console.log('❌ No user ID found, skipping project limit check');
           console.log('Available sources:', {
             'req.user?.id': req.user?.id,
             'req.headers[x-user-id]': req.headers['x-user-id'],
@@ -90,6 +106,8 @@ class LimitMiddleware {
             'req.body?.XAuthUserId': req.body?.XAuthUserId,
             'req.XAuthUserId': req.XAuthUserId
           });
+          console.log('Request headers:', req.headers);
+          console.log('Request body:', req.body);
           return next();
         }
 
@@ -99,17 +117,21 @@ class LimitMiddleware {
                         req.headers['X-User-Plan'] || 
                         'basic';
 
-        console.log(`Checking project limit for User: ${userId}, Plan: ${userPlan}`);
+        console.log(`🔍 Checking project limit for User: ${userId}, Plan: ${userPlan}`);
 
         // Check if user can create a project
         const checkResult = await this.apiUsageService.checkProjectLimit(userId);
+        console.log('📊 Project limit check result:', checkResult);
 
         if (!checkResult.allowed) {
+          console.log('❌ Project limit exceeded, blocking request');
           return res.status(403).json({
             success: false,
             message: checkResult.reason
           });
         }
+
+        console.log('✅ Project limit check passed, allowing request');
 
         // Store user info for later increment
         req.userId = userId;
