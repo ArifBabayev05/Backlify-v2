@@ -48,10 +48,11 @@ class UsageLimitMiddleware {
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
         
-        // Count projects from logs (successful /create-api-from-schema calls)
+        // Count projects from logs (successful /create-api-from-schema calls) - filter by user
         const { data: projectLogs, error: projectError } = await supabase
           .from('api_logs')
           .select('*')
+          .eq('XAuthUserId', userId)
           .eq('endpoint', '/create-api-from-schema')
           .eq('status_code', 200)
           .gte('timestamp', thirtyDaysAgo.toISOString())
@@ -200,10 +201,11 @@ class UsageLimitMiddleware {
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
         
-        // Count projects from logs (successful /create-api-from-schema calls)
+        // Count projects from logs (successful /create-api-from-schema calls) - filter by user
         const { data: projectLogs, error: projectError } = await supabase
           .from('api_logs')
           .select('*')
+          .eq('XAuthUserId', userId)
           .eq('endpoint', '/create-api-from-schema')
           .eq('status_code', 200)
           .gte('timestamp', thirtyDaysAgo.toISOString())

@@ -813,16 +813,17 @@ app.get('/debug-user-info', async (req, res) => {
     const apiRequests = (logs || []).filter(log => log.is_api_request === true);
     const requestCount = apiRequests.length;
     
-    // Count projects (non-API requests that create APIs) - this is global, not per API
+    // Count projects (non-API requests that create APIs) - filter by user
     const { data: allLogs, error: allLogsError } = await supabase
       .from('api_logs')
-      .select('*');
+      .select('*')
+      .eq('XAuthUserId', userId);
     
     if (allLogsError) {
       console.error('Error fetching all logs:', allLogsError);
     }
     
-    console.log(`Found ${allLogs ? allLogs.length : 0} total logs in database`);
+    console.log(`Found ${allLogs ? allLogs.length : 0} total logs for user ${userId}`);
     
     const projectLogs = (allLogs || []).filter(log => 
       log.endpoint === '/create-api-from-schema' && log.status_code === 200
