@@ -788,16 +788,68 @@ app.get('/debug-user-info', async (req, res) => {
     const userPlan = await apiUsageService.getUserPlan(userId);
     console.log('User plan:', userPlan);
     
-    // Get usage stats using UsageService
-    const UsageService = require('./services/usageService');
-    const usageService = new UsageService();
-    const usage = await usageService.getCurrentUsage(userId, userPlan);
-    console.log('Usage stats:', usage);
+    // Get usage stats from logs instead of usage table
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    // Get all logs for this user (no date filtering to catch timezone issues)
+    const now = new Date();
+    
+    console.log('Date filtering:');
+    console.log(`- Now: ${now.toISOString()}`);
+    
+    // Get all logs for this user
+    const { data: logs, error: logsError } = await supabase
+      .from('api_logs')
+      .select('*')
+      .eq('XAuthUserId', userId);
+    
+    if (logsError) {
+      console.error('Error fetching logs:', logsError);
+    }
+    
+    console.log(`Found ${logs ? logs.length : 0} total logs for user ${userId}`);
+    
+    // Count API requests (is_api_request = true)
+    const apiRequests = (logs || []).filter(log => log.is_api_request === true);
+    const requestCount = apiRequests.length;
+    
+    // Count projects (non-API requests that create APIs) - this is global, not per API
+    const { data: allLogs, error: allLogsError } = await supabase
+      .from('api_logs')
+      .select('*');
+    
+    if (allLogsError) {
+      console.error('Error fetching all logs:', allLogsError);
+    }
+    
+    console.log(`Found ${allLogs ? allLogs.length : 0} total logs in database`);
+    
+    const projectLogs = (allLogs || []).filter(log => 
+      log.endpoint === '/create-api-from-schema' && log.status_code === 200
+    );
+    const projectCount = projectLogs.length;
+    
+    console.log(`Project logs found: ${projectLogs.length}`);
+    console.log(`API request logs found: ${apiRequests.length}`);
     
     // Get plan limits
     const planMiddleware = require('./middleware/planMiddleware');
     const limits = planMiddleware.getPlanLimits(userPlan);
     console.log('Plan limits:', limits);
+    
+    // Create usage object similar to UsageService format
+    const usage = {
+      userId,
+      userPlan,
+      requestsCount: requestCount,
+      projectsCount: projectCount,
+      maxRequests: limits.maxRequests,
+      maxProjects: limits.maxProjects,
+      planName: limits.planName,
+      isUnlimited: limits.isUnlimited
+    };
+    
+    console.log('Usage stats from logs:', usage);
     
     res.json({
       success: true,
@@ -806,7 +858,9 @@ app.get('/debug-user-info', async (req, res) => {
         userPlan,
         usage,
         limits,
-        isOverLimit: usage && usage.projectsCount >= limits.projects
+        isOverLimit: usage && usage.projectsCount >= limits.projects,
+        logCount: logs ? logs.length : 0,
+        allLogCount: allLogs ? allLogs.length : 0
       }
     });
   } catch (error) {

@@ -40,32 +40,37 @@ class UsageLimitMiddleware {
           return next();
         }
 
-        // Get current usage for the user using UsageService
-        const UsageService = require('../services/usageService');
-        const usageService = new UsageService();
+        // Get current usage from logs directly
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
         
-        let currentProjects = 0;
-        let currentRequests = 0;
+        // Get logs for the last 30 days to catch any timezone issues
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
         
-        try {
-          const usage = await usageService.getCurrentUsage(userId, userPlan);
-          console.log('Usage from UsageService:', usage);
-          
-          currentProjects = usage.projectsCount || 0;
-          currentRequests = usage.requestsCount || 0;
-          
-          console.log(`Current usage - Projects: ${currentProjects}, Requests: ${currentRequests}`);
-        } catch (usageError) {
-          console.error('Error getting usage from UsageService:', usageError);
-          // Fallback to api_logs method
-          const usage = await this.apiUsageService.getApiUsageStats(null, userId);
-          console.log('Usage stats from api_logs:', usage);
-          
-          currentProjects = usage ? usage.projects_count : 0;
-          currentRequests = usage ? usage.requests_count : 0;
-          
-          console.log(`Current usage (fallback) - Projects: ${currentProjects}, Requests: ${currentRequests}`);
-        }
+        // Count projects from logs (successful /create-api-from-schema calls)
+        const { data: projectLogs, error: projectError } = await supabase
+          .from('api_logs')
+          .select('*')
+          .eq('endpoint', '/create-api-from-schema')
+          .eq('status_code', 200)
+          .gte('timestamp', thirtyDaysAgo.toISOString())
+          .lte('timestamp', now.toISOString());
+        
+        const currentProjects = projectLogs ? projectLogs.length : 0;
+        
+        // Count API requests from logs
+        const { data: requestLogs, error: requestError } = await supabase
+          .from('api_logs')
+          .select('*')
+          .eq('XAuthUserId', userId)
+          .eq('is_api_request', true)
+          .gte('timestamp', thirtyDaysAgo.toISOString())
+          .lte('timestamp', now.toISOString());
+        
+        const currentRequests = requestLogs ? requestLogs.length : 0;
+        
+        console.log(`Current usage from logs - Projects: ${currentProjects}, Requests: ${currentRequests}`);
 
         // Check project limit
         if (currentProjects >= limits.projects) {
@@ -122,28 +127,41 @@ class UsageLimitMiddleware {
           return next();
         }
 
-        // Get current usage for the user
-        const usage = await this.apiUsageService.getApiUsageStats(apiId, userId);
+        // Get current usage from logs directly
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
         
-        if (!usage) {
-          console.log('Could not retrieve usage stats, allowing request');
-          return next();
-        }
+        // Get logs for the last 30 days to catch any timezone issues
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+        
+        // Count API requests from logs
+        const { data: requestLogs, error: requestError } = await supabase
+          .from('api_logs')
+          .select('*')
+          .eq('XAuthUserId', userId)
+          .eq('is_api_request', true)
+          .gte('timestamp', thirtyDaysAgo.toISOString())
+          .lte('timestamp', now.toISOString());
+        
+        const currentRequests = requestLogs ? requestLogs.length : 0;
+        
+        console.log(`Current requests from logs: ${currentRequests}`);
 
         // Check request limit
-        if (usage.requests_count >= limits.requests) {
-          console.log(`Request limit exceeded: ${usage.requests_count}/${limits.requests}`);
+        if (currentRequests >= limits.requests) {
+          console.log(`Request limit exceeded: ${currentRequests}/${limits.requests}`);
           return res.status(403).json({
             success: false,
             error: 'Request limit exceeded',
             message: `You have reached the monthly request limit for your ${userPlan} plan (${limits.requests} requests/month). Please upgrade your plan for more requests.`,
-            current: usage.requests_count,
+            current: currentRequests,
             limit: limits.requests,
             plan: userPlan
           });
         }
 
-        console.log(`Request limit check passed: ${usage.requests_count}/${limits.requests}`);
+        console.log(`Request limit check passed: ${currentRequests}/${limits.requests}`);
         next();
       } catch (error) {
         console.error('Error checking request limit:', error);
@@ -174,41 +192,65 @@ class UsageLimitMiddleware {
           return next();
         }
 
-        // Get current usage for the user
-        const usage = await this.apiUsageService.getApiUsageStats(null, userId);
+        // Get current usage from logs directly
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
         
-        if (!usage) {
-          console.log('Could not retrieve usage stats, allowing request');
-          return next();
-        }
+        // Get logs for the last 30 days to catch any timezone issues
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+        
+        // Count projects from logs (successful /create-api-from-schema calls)
+        const { data: projectLogs, error: projectError } = await supabase
+          .from('api_logs')
+          .select('*')
+          .eq('endpoint', '/create-api-from-schema')
+          .eq('status_code', 200)
+          .gte('timestamp', thirtyDaysAgo.toISOString())
+          .lte('timestamp', now.toISOString());
+        
+        const currentProjects = projectLogs ? projectLogs.length : 0;
+        
+        // Count API requests from logs
+        const { data: requestLogs, error: requestError } = await supabase
+          .from('api_logs')
+          .select('*')
+          .eq('XAuthUserId', userId)
+          .eq('is_api_request', true)
+          .gte('timestamp', thirtyDaysAgo.toISOString())
+          .lte('timestamp', now.toISOString());
+        
+        const currentRequests = requestLogs ? requestLogs.length : 0;
+        
+        console.log(`Current usage from logs - Projects: ${currentProjects}, Requests: ${currentRequests}`);
 
         // Check project limit first
-        if (usage.projects_count >= limits.projects) {
-          console.log(`Project limit exceeded: ${usage.projects_count}/${limits.projects}`);
+        if (currentProjects >= limits.projects) {
+          console.log(`Project limit exceeded: ${currentProjects}/${limits.projects}`);
           return res.status(403).json({
             success: false,
             error: 'Project limit exceeded',
             message: `You have reached the maximum number of projects for your ${userPlan} plan (${limits.projects} projects). Please upgrade your plan to create more projects.`,
-            current: usage.projects_count,
+            current: currentProjects,
             limit: limits.projects,
             plan: userPlan
           });
         }
 
         // Check request limit
-        if (usage.requests_count >= limits.requests) {
-          console.log(`Request limit exceeded: ${usage.requests_count}/${limits.requests}`);
+        if (currentRequests >= limits.requests) {
+          console.log(`Request limit exceeded: ${currentRequests}/${limits.requests}`);
           return res.status(403).json({
             success: false,
             error: 'Request limit exceeded',
             message: `You have reached the monthly request limit for your ${userPlan} plan (${limits.requests} requests/month). Please upgrade your plan for more requests.`,
-            current: usage.requests_count,
+            current: currentRequests,
             limit: limits.requests,
             plan: userPlan
           });
         }
 
-        console.log(`Both limits check passed - Projects: ${usage.projects_count}/${limits.projects}, Requests: ${usage.requests_count}/${limits.requests}`);
+        console.log(`Both limits check passed - Projects: ${currentProjects}/${limits.projects}, Requests: ${currentRequests}/${limits.requests}`);
         next();
       } catch (error) {
         console.error('Error checking both limits:', error);
