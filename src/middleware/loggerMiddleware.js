@@ -21,6 +21,8 @@ const loggerMiddleware = async (req, res, next) => {
                        (req.body ? req.body.XAuthUserId : null) ||
                        'ADMIN';
   
+  console.log(`[API LOG] Debug - XAuthUserId from headers: ${XAuthUserId}`);
+  
   // Also set XAuthUserId on the request for other middleware to use
   req.XAuthUserId = XAuthUserId;
   
