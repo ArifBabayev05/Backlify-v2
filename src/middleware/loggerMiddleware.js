@@ -33,42 +33,42 @@ const loggerMiddleware = async (req, res, next) => {
   const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
   if (apiMatch && apiMatch[1]) {
     apiId = apiMatch[1];
-    isApiRequest = true;
+    
+    // Don't count /api/user/* endpoints as API requests
+    if (apiId !== 'user') {
+      isApiRequest = true;
+    }
     
     // If XAuthUserId is ADMIN or missing, try to find the actual API owner
-    if (XAuthUserId === 'ADMIN' || !XAuthUserId || XAuthUserId === 'default') {
+    if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
       try {
         const supabase = createClient(
           process.env.SUPABASE_URL || config.supabase.url,
           process.env.SUPABASE_KEY || config.supabase.key
         );
         
-        // Look up the API owner from api_logs table (find who uses this API most)
-        const { data: apiLogs, error: apiError } = await supabase
-          .from('api_logs')
-          .select('XAuthUserId')
+        // Look up the API owner by API ID from api_registry table
+        const { data: apiData, error: apiError } = await supabase
+          .from('api_registry')
+          .select('metadata')
           .eq('api_id', apiId)
-          .not('XAuthUserId', 'is', null)
-          .neq('XAuthUserId', 'ADMIN')
-          .neq('XAuthUserId', 'default')
-          .order('timestamp', { ascending: false })
-          .limit(10);
+          .single();
         
-        if (!apiError && apiLogs && apiLogs.length > 0) {
-          // Find the most frequent user for this API
-          const userCounts = {};
-          apiLogs.forEach(log => {
-            const userId = log.XAuthUserId;
-            userCounts[userId] = (userCounts[userId] || 0) + 1;
-          });
+        if (!apiError && apiData && apiData.metadata) {
+          // Parse metadata to get XAuthUserId
+          let metadata;
+          try {
+            metadata = typeof apiData.metadata === 'string' 
+              ? JSON.parse(apiData.metadata) 
+              : apiData.metadata;
+          } catch (parseError) {
+            console.error('Error parsing API metadata:', parseError);
+            metadata = apiData.metadata;
+          }
           
-          const mostFrequentUser = Object.keys(userCounts).reduce((a, b) => 
-            userCounts[a] > userCounts[b] ? a : b
-          );
-          
-          if (mostFrequentUser) {
-            actualUserId = mostFrequentUser;
-            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId} (used ${userCounts[mostFrequentUser]} times)`);
+          if (metadata && metadata.XAuthUserId && metadata.XAuthUserId !== 'ADMIN') {
+            actualUserId = metadata.XAuthUserId;
+            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId}`);
           }
         }
       } catch (error) {
@@ -149,7 +149,7 @@ const loggerMiddleware = async (req, res, next) => {
       const statusIndicator = isSuccess ? '✓' : '✗';
       console.log(`[API LOG] ${actualUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
-      const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search', '/api/user/plans'];
+      const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search'];
 
       if (
         (req.path === '/health' && res.statusCode === 200) ||
