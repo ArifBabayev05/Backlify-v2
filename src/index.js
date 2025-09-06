@@ -774,6 +774,47 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
+// Debug endpoint to check user info and limits
+app.get('/debug-user-info', async (req, res) => {
+  try {
+    const userId = req.XAuthUserId || req.user?.username || 'anonymous';
+    
+    console.log('=== DEBUG USER INFO ===');
+    console.log('XAuthUserId:', userId);
+    console.log('req.user:', req.user);
+    
+    // Get user plan
+    const apiUsageService = require('./services/apiUsageService');
+    const userPlan = await apiUsageService.getUserPlan(userId);
+    console.log('User plan:', userPlan);
+    
+    // Get usage stats using UsageService
+    const UsageService = require('./services/usageService');
+    const usageService = new UsageService();
+    const usage = await usageService.getCurrentUsage(userId, userPlan);
+    console.log('Usage stats:', usage);
+    
+    // Get plan limits
+    const planMiddleware = require('./middleware/planMiddleware');
+    const limits = planMiddleware.getPlanLimits(userPlan);
+    console.log('Plan limits:', limits);
+    
+    res.json({
+      success: true,
+      debug: {
+        userId,
+        userPlan,
+        usage,
+        limits,
+        isOverLimit: usage && usage.projectsCount >= limits.projects
+      }
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 2. Schema generator API
 app.post('/generate-schema', usageLimitMiddleware.checkProjectLimit(), async (req, res) => {
   // Ensure CORS headers are set
