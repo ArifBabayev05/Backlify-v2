@@ -2,6 +2,40 @@ const { createClient } = require('@supabase/supabase-js');
 const config = require('../config/config');
 
 /**
+ * Resolve user ID from API ID by looking up in api_registry table
+ */
+async function resolveUserIdFromApiId(apiId) {
+  try {
+    const supabase = createClient(
+      process.env.SUPABASE_URL || config.supabase.url,
+      process.env.SUPABASE_KEY || config.supabase.key
+    );
+    
+    // Get API metadata from api_registry table
+    const { data, error } = await supabase
+      .from('api_registry')
+      .select('metadata')
+      .eq('api_id', apiId)
+      .single();
+    
+    if (error || !data) {
+      console.log(`API ${apiId} not found in registry`);
+      return 'UNKNOWN';
+    }
+    
+    // Parse metadata to get XAuthUserId
+    const metadata = typeof data.metadata === 'string' 
+      ? JSON.parse(data.metadata) 
+      : data.metadata;
+    
+    return metadata.XAuthUserId || 'UNKNOWN';
+  } catch (error) {
+    console.error('Error resolving user ID from API ID:', error);
+    return 'UNKNOWN';
+  }
+}
+
+/**
  * Logger middleware that logs all API requests to Supabase
  */
 const loggerMiddleware = async (req, res, next) => {
@@ -21,68 +55,35 @@ const loggerMiddleware = async (req, res, next) => {
                        (req.body ? req.body.XAuthUserId : null) ||
                        'ADMIN';
   
-  console.log(`[API LOG] Debug - XAuthUserId from headers: ${XAuthUserId}`);
-  
   // Also set XAuthUserId on the request for other middleware to use
   req.XAuthUserId = XAuthUserId;
   
   // Check if this is a request to a specific API
   let apiId = null;
   let isApiRequest = false;
-  let actualUserId = XAuthUserId; // Default to the detected user ID
+  let resolvedUserId = XAuthUserId; // Default to the provided XAuthUserId
   
   // Extract API ID from URL if it's an API request
   const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
   if (apiMatch && apiMatch[1]) {
     apiId = apiMatch[1];
     
-    // Don't count /api/user/* endpoints as API requests
-    if (apiId !== 'user') {
-      isApiRequest = true;
-    }
+    // Check if this is a system API (like /api/user/plans) that should not be counted
+    const systemApis = ['user', 'payment', 'admin', 'debug'];
+    const isSystemApi = systemApis.some(sysApi => req.originalUrl.startsWith(`/api/${sysApi}`));
     
-    // If XAuthUserId is ADMIN or missing, try to find the actual API owner
-    if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
-      try {
-        const supabase = createClient(
-          process.env.SUPABASE_URL || config.supabase.url,
-          process.env.SUPABASE_KEY || config.supabase.key
-        );
-        
-        // Look up the API owner by API ID from api_registry table
-        const { data: apiData, error: apiError } = await supabase
-          .from('api_registry')
-          .select('metadata')
-          .eq('api_id', apiId)
-          .single();
-        
-        if (!apiError && apiData && apiData.metadata) {
-          console.log(`[API LOG] Debug - API ${apiId} metadata type:`, typeof apiData.metadata);
-          
-          // Parse metadata to get XAuthUserId
-          let metadata;
-          try {
-            metadata = typeof apiData.metadata === 'string' 
-              ? JSON.parse(apiData.metadata) 
-              : apiData.metadata;
-            console.log(`[API LOG] Debug - Parsed metadata XAuthUserId:`, metadata?.XAuthUserId);
-          } catch (parseError) {
-            console.error('Error parsing API metadata:', parseError);
-            metadata = apiData.metadata;
-          }
-          
-          if (metadata && metadata.XAuthUserId && metadata.XAuthUserId !== 'ADMIN') {
-            actualUserId = metadata.XAuthUserId;
-            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId}`);
-          } else {
-            console.log(`[API LOG] No valid XAuthUserId found for API: ${apiId}`);
-          }
-        } else {
-          console.log(`[API LOG] No API data found for API: ${apiId}`, apiError?.message);
+    // Only count as API request if it's not a system API
+    if (!isSystemApi) {
+      isApiRequest = true;
+      
+      // Try to resolve the user ID from the API ID if XAuthUserId is not available or is 'ADMIN'
+      if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
+        try {
+          resolvedUserId = await resolveUserIdFromApiId(apiId);
+        } catch (error) {
+          console.error('Error resolving user ID from API ID:', error);
+          resolvedUserId = 'UNKNOWN';
         }
-      } catch (error) {
-        console.error('Error finding API owner:', error);
-        // Keep using ADMIN if lookup fails
       }
     }
   }
@@ -156,7 +157,7 @@ const loggerMiddleware = async (req, res, next) => {
       // Add color indicators for status codes: green for success (including 304), red for errors
       const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
       const statusIndicator = isSuccess ? '✓' : '✗';
-      console.log(`[API LOG] ${actualUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
+      console.log(`[API LOG] ${resolvedUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
       const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search'];
 
@@ -172,7 +173,7 @@ const loggerMiddleware = async (req, res, next) => {
       // Log to Supabase
       await logToSupabase({
         timestamp: requestTimestamp,
-        XAuthUserId: actualUserId, // Use the actual user ID (API owner if found)
+        XAuthUserId: resolvedUserId, // Use resolved user ID
         endpoint: requestInfo.path,
         method: requestInfo.method,
         api_id: apiId,
@@ -371,4 +372,4 @@ async function createLogTable(supabase) {
   }
 }
 
-module.exports = loggerMiddleware; 
+module.exports = loggerMiddleware;
