@@ -55,12 +55,15 @@ const loggerMiddleware = async (req, res, next) => {
           .single();
         
         if (!apiError && apiData && apiData.metadata) {
+          console.log(`[API LOG] Debug - API ${apiId} metadata type:`, typeof apiData.metadata);
+          
           // Parse metadata to get XAuthUserId
           let metadata;
           try {
             metadata = typeof apiData.metadata === 'string' 
               ? JSON.parse(apiData.metadata) 
               : apiData.metadata;
+            console.log(`[API LOG] Debug - Parsed metadata XAuthUserId:`, metadata?.XAuthUserId);
           } catch (parseError) {
             console.error('Error parsing API metadata:', parseError);
             metadata = apiData.metadata;
@@ -69,7 +72,11 @@ const loggerMiddleware = async (req, res, next) => {
           if (metadata && metadata.XAuthUserId && metadata.XAuthUserId !== 'ADMIN') {
             actualUserId = metadata.XAuthUserId;
             console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId}`);
+          } else {
+            console.log(`[API LOG] No valid XAuthUserId found for API: ${apiId}`);
           }
+        } else {
+          console.log(`[API LOG] No API data found for API: ${apiId}`, apiError?.message);
         }
       } catch (error) {
         console.error('Error finding API owner:', error);
