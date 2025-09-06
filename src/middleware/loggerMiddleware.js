@@ -36,31 +36,39 @@ const loggerMiddleware = async (req, res, next) => {
     isApiRequest = true;
     
     // If XAuthUserId is ADMIN or missing, try to find the actual API owner
-    if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
+    if (XAuthUserId === 'ADMIN' || !XAuthUserId || XAuthUserId === 'default') {
       try {
         const supabase = createClient(
           process.env.SUPABASE_URL || config.supabase.url,
           process.env.SUPABASE_KEY || config.supabase.key
         );
         
-        // Look up the API owner by API ID
-        const { data: apiData, error: apiError } = await supabase
-          .from('apis')
-          .select('user_id')
-          .eq('id', apiId)
-          .single();
+        // Look up the API owner from api_logs table (find who uses this API most)
+        const { data: apiLogs, error: apiError } = await supabase
+          .from('api_logs')
+          .select('XAuthUserId')
+          .eq('api_id', apiId)
+          .not('XAuthUserId', 'is', null)
+          .neq('XAuthUserId', 'ADMIN')
+          .neq('XAuthUserId', 'default')
+          .order('timestamp', { ascending: false })
+          .limit(10);
         
-        if (!apiError && apiData && apiData.user_id) {
-          // Get the username from user_id
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('username')
-            .eq('id', apiData.user_id)
-            .single();
+        if (!apiError && apiLogs && apiLogs.length > 0) {
+          // Find the most frequent user for this API
+          const userCounts = {};
+          apiLogs.forEach(log => {
+            const userId = log.XAuthUserId;
+            userCounts[userId] = (userCounts[userId] || 0) + 1;
+          });
           
-          if (!userError && userData && userData.username) {
-            actualUserId = userData.username;
-            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId}`);
+          const mostFrequentUser = Object.keys(userCounts).reduce((a, b) => 
+            userCounts[a] > userCounts[b] ? a : b
+          );
+          
+          if (mostFrequentUser) {
+            actualUserId = mostFrequentUser;
+            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId} (used ${userCounts[mostFrequentUser]} times)`);
           }
         }
       } catch (error) {
