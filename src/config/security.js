@@ -44,7 +44,7 @@ const securityConfig = {
    */
   auth: {
     // JWT token expiry (seconds)
-    jwtExpiry: 3600,  // 1 hour
+    jwtExpiry: 1800,  // 30 minutes
     
     // Refresh token expiry (seconds)
     refreshTokenExpiry: 604800,  // 7 days

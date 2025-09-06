@@ -10,6 +10,8 @@ const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
 const loggerMiddleware = require('./middleware/loggerMiddleware');
 const limitMiddleware = require('./middleware/limitMiddleware');
+const planMiddleware = require('./middleware/planMiddleware');
+const usageLimitMiddleware = require('./middleware/usageLimitMiddleware');
 const security = require('./security');
 const { initializeSecurityTables } = require('./utils/security/initializeSecurityTables');
 const EpointTablesSetup = require('./utils/setup/epointTables');
@@ -130,6 +132,8 @@ const universalCorsOptions = {
     'Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization',
     // Custom authentication headers
     'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId', 'x-skip-auth',
+    // Plan headers
+    'X-User-Plan', 'x-user-plan', 'X-USER-PLAN',
     // API headers
     'X-API-Key', 'x-api-key', 'X-API-Version', 'X-Request-ID', 'X-Client-Version', 'X-Platform',
     // Payment headers
@@ -213,6 +217,9 @@ app.use(async (req, res, next) => {
 
 // Apply logger middleware AFTER XAuthUserId has been set
 app.use(loggerMiddleware);
+
+// Apply plan middleware to extract X-User-Plan header
+app.use(planMiddleware.extractUserPlan());
 
 // Apply route protection (must be applied before route definitions)
 security.applyRouteProtection(app);
@@ -768,7 +775,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // 2. Schema generator API
-app.post('/generate-schema', limitMiddleware.checkProjectLimit(), (req, res) => {
+app.post('/generate-schema', usageLimitMiddleware.checkProjectLimit(), (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
@@ -970,7 +977,7 @@ app.post('/modify-schema', (req, res) => {
 });
 
 // 3. API generator from schema
-app.post('/create-api-from-schema', limitMiddleware.checkProjectLimit(), async (req, res) => {
+app.post('/create-api-from-schema', usageLimitMiddleware.checkBothLimits(), async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
@@ -1216,7 +1223,7 @@ app.get('/my-apis', (req, res) => {
 app.use('/api/usage', usageRoutes);
 
 // Dynamic API routing - verify user has access to the API
-app.use('/api/:apiId', async (req, res, next) => {
+app.use('/api/:apiId', usageLimitMiddleware.checkRequestLimit(), async (req, res, next) => {
   try {
     const apiId = req.params.apiId;
     
@@ -1313,8 +1320,8 @@ app.use('/api/:apiId', async (req, res, next) => {
     return router(req, res, next);
   }
   
-  // Skip authentication for ALL API endpoints - open access mode
-  console.log(`Allowing open access to API ${apiId} for testing purposes`);
+  // Apply usage limits even for open access mode
+  console.log(`Applying usage limits to API ${apiId} for user: ${req.XAuthUserId || 'anonymous'}`);
   
   // Set default user ID for unauthenticated access
   req.XAuthUserId = req.XAuthUserId || 'anonymous';
