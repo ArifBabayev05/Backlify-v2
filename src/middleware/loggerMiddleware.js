@@ -27,12 +27,47 @@ const loggerMiddleware = async (req, res, next) => {
   // Check if this is a request to a specific API
   let apiId = null;
   let isApiRequest = false;
+  let actualUserId = XAuthUserId; // Default to the detected user ID
   
   // Extract API ID from URL if it's an API request
   const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
   if (apiMatch && apiMatch[1]) {
     apiId = apiMatch[1];
     isApiRequest = true;
+    
+    // If XAuthUserId is ADMIN or missing, try to find the actual API owner
+    if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
+      try {
+        const supabase = createClient(
+          process.env.SUPABASE_URL || config.supabase.url,
+          process.env.SUPABASE_KEY || config.supabase.key
+        );
+        
+        // Look up the API owner by API ID
+        const { data: apiData, error: apiError } = await supabase
+          .from('apis')
+          .select('user_id')
+          .eq('id', apiId)
+          .single();
+        
+        if (!apiError && apiData && apiData.user_id) {
+          // Get the username from user_id
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('username')
+            .eq('id', apiData.user_id)
+            .single();
+          
+          if (!userError && userData && userData.username) {
+            actualUserId = userData.username;
+            console.log(`[API LOG] Found API owner: ${actualUserId} for API: ${apiId}`);
+          }
+        }
+      } catch (error) {
+        console.error('Error finding API owner:', error);
+        // Keep using ADMIN if lookup fails
+      }
+    }
   }
   
   // Capture request details - sanitize sensitive information
@@ -104,7 +139,7 @@ const loggerMiddleware = async (req, res, next) => {
       // Add color indicators for status codes: green for success (including 304), red for errors
       const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
       const statusIndicator = isSuccess ? '✓' : '✗';
-      console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
+      console.log(`[API LOG] ${actualUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
       
       const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search'];
 
@@ -120,7 +155,7 @@ const loggerMiddleware = async (req, res, next) => {
       // Log to Supabase
       await logToSupabase({
         timestamp: requestTimestamp,
-        XAuthUserId: XAuthUserId,
+        XAuthUserId: actualUserId, // Use the actual user ID (API owner if found)
         endpoint: requestInfo.path,
         method: requestInfo.method,
         api_id: apiId,
