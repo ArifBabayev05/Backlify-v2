@@ -18,8 +18,27 @@ class UsageService {
    */
   async getOrCreateUsage(userId, userPlan) {
     try {
+      // First, try to get user by username (for string XAuthUserId)
+      let actualUserId = userId;
+      
+      if (typeof userId === 'string' && !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // This is a username, not a UUID - get the actual user ID
+        const { data: user, error: userError } = await this.supabase
+          .from('users')
+          .select('id')
+          .eq('username', userId)
+          .single();
+        
+        if (userError || !user) {
+          console.error(`User not found: ${userId}`);
+          throw new Error(`User not found: ${userId}`);
+        }
+        
+        actualUserId = user.id;
+      }
+
       const { data, error } = await this.supabase.rpc('get_or_create_usage', {
-        p_user_id: userId,
+        p_user_id: actualUserId,
         p_user_plan: userPlan
       });
 
@@ -119,6 +138,7 @@ class UsageService {
         throw error;
       }
 
+      console.log(`Project count incremented for user ${userId}: ${usage.projects_count + 1}`);
       return data;
     } catch (error) {
       console.error('Error in incrementProjectCount:', error);

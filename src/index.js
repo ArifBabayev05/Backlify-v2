@@ -775,7 +775,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // 2. Schema generator API
-app.post('/generate-schema', usageLimitMiddleware.checkProjectLimit(), (req, res) => {
+app.post('/generate-schema', usageLimitMiddleware.checkProjectLimit(), async (req, res) => {
   // Ensure CORS headers are set
   setCorsHeaders(res);
   
@@ -790,95 +790,103 @@ app.post('/generate-schema', usageLimitMiddleware.checkProjectLimit(), (req, res
   
   // Call the AI service to generate schema
   try {
-    apiGeneratorController.generateDatabaseSchema(prompt, XAuthUserIdToUse)
-      .then(tables => {
-        // Validate that we have proper table structures
-        if (!tables || !Array.isArray(tables) || tables.length === 0) {
-          return res.status(500).json({ 
-            error: 'Failed to generate schema',
-            details: 'No valid tables were generated'
-          });
-        }
-        
-        // Verify each table has columns
-        const validTables = tables.filter(table => 
-          table && table.name && table.columns && Array.isArray(table.columns) && table.columns.length > 0
-        );
-        
-        if (validTables.length === 0) {
-          return res.status(500).json({ 
-            error: 'Failed to generate schema',
-            details: 'Generated tables have no valid column definitions'
-          });
-        }
-        
-        // Ensure every table has an ID column
-        validTables.forEach(table => {
-          // Check if table already has an ID column
-          const hasIdColumn = table.columns.some(col => 
-            col.name === 'id' && 
-            (col.type.includes('uuid') || col.type.includes('serial'))
-          );
-          
-          // If no ID column, add one
-          if (!hasIdColumn) {
-            console.log(`Adding missing ID column to table: ${table.name}`);
-            // Add UUID primary key column
-            table.columns.unshift({
-              name: 'id',
-              type: 'uuid',
-              constraints: [
-                'primary key',
-                'default uuid_generate_v4()'
-              ]
-            });
-          }
-        });
-        
-        // Log the table structure for debugging
-        console.log(`Returning ${validTables.length} valid tables with column definitions`);
-        validTables.forEach(table => {
-          console.log(`- Table "${table.name}" with ${table.columns.length} columns`);
-        });
-        
-        // Collect relationship information for better user feedback
-        const relationshipInfo = validTables.reduce((acc, table) => {
-          if (table.relationships && table.relationships.length > 0) {
-            acc[table.name] = table.relationships.map(rel => ({
-              type: rel.type,
-              targetTable: rel.targetTable,
-              sourceColumn: rel.sourceColumn || `${rel.targetTable}_id`,
-              targetColumn: rel.targetColumn || 'id'
-            }));
-          }
-          return acc;
-        }, {});
-        
-        // Identify which tables might need special attention
-        const complexTables = validTables.filter(table => {
-          // Tables with entity references (likely for multiple instances)
-          return table.columns.some(col => 
-            col.name === 'entity_type' || col.name === 'entity_id'
-          );
-        }).map(table => table.name);
-        
-        // Send back exactly the structure needed for create-api-from-schema
-        res.json({
-          success: true,
-          XAuthUserId: XAuthUserIdToUse,
-          tables: validTables, // Return only the validated tables with proper structure
-          metadata: {
-            relationships: relationshipInfo,
-            complexTables: complexTables,
-            tableCount: validTables.length,
-            totalColumns: validTables.reduce((sum, table) => sum + table.columns.length, 0)
-          }
-        });
-      })
-      .catch(error => {
-        console.error('Error generating schema:', error);
-        res.status(500).json({ error: error.message });
+    const tables = await apiGeneratorController.generateDatabaseSchema(prompt, XAuthUserIdToUse);
+    
+    // Validate that we have proper table structures
+    if (!tables || !Array.isArray(tables) || tables.length === 0) {
+      return res.status(500).json({ 
+        error: 'Failed to generate schema',
+        details: 'No valid tables were generated'
       });
+    }
+    
+    // Verify each table has columns
+    const validTables = tables.filter(table => 
+      table && table.name && table.columns && Array.isArray(table.columns) && table.columns.length > 0
+    );
+    
+    if (validTables.length === 0) {
+      return res.status(500).json({ 
+        error: 'Failed to generate schema',
+        details: 'Generated tables have no valid column definitions'
+      });
+    }
+    
+    // Ensure every table has an ID column
+    validTables.forEach(table => {
+      // Check if table already has an ID column
+      const hasIdColumn = table.columns.some(col => 
+        col.name === 'id' && 
+        (col.type.includes('uuid') || col.type.includes('serial'))
+      );
+      
+      // If no ID column, add one
+      if (!hasIdColumn) {
+        console.log(`Adding missing ID column to table: ${table.name}`);
+        // Add UUID primary key column
+        table.columns.unshift({
+          name: 'id',
+          type: 'uuid',
+          constraints: [
+            'primary key',
+            'default uuid_generate_v4()'
+          ]
+        });
+      }
+    });
+    
+    // Log the table structure for debugging
+    console.log(`Returning ${validTables.length} valid tables with column definitions`);
+    validTables.forEach(table => {
+      console.log(`- Table "${table.name}" with ${table.columns.length} columns`);
+    });
+    
+    // Collect relationship information for better user feedback
+    const relationshipInfo = validTables.reduce((acc, table) => {
+      if (table.relationships && table.relationships.length > 0) {
+        acc[table.name] = table.relationships.map(rel => ({
+          type: rel.type,
+          targetTable: rel.targetTable,
+          sourceColumn: rel.sourceColumn || `${rel.targetTable}_id`,
+          targetColumn: rel.targetColumn || 'id'
+        }));
+      }
+      return acc;
+    }, {});
+    
+    // Identify which tables might need special attention
+    const complexTables = validTables.filter(table => {
+      // Tables with entity references (likely for multiple instances)
+      return table.columns.some(col => 
+        col.name === 'entity_type' || col.name === 'entity_id'
+      );
+    }).map(table => table.name);
+    
+    // Increment project count after successful schema generation
+    if (req.usageInfo && req.usageInfo.userId) {
+      try {
+        const UsageService = require('./services/usageService');
+        const usageService = new UsageService();
+        await usageService.incrementProjectCount(req.usageInfo.userId, req.usageInfo.userPlan);
+        console.log(`Project count incremented for user: ${req.usageInfo.userId}`);
+      } catch (incrementError) {
+        console.error('Error incrementing project count:', incrementError);
+        // Don't fail the request if increment fails
+      }
+    }
+
+    // Send back exactly the structure needed for create-api-from-schema
+    res.json({
+      success: true,
+      XAuthUserId: XAuthUserIdToUse,
+      tables: validTables, // Return only the validated tables with proper structure
+      metadata: {
+        relationships: relationshipInfo,
+        complexTables: complexTables,
+        tableCount: validTables.length,
+        totalColumns: validTables.reduce((sum, table) => sum + table.columns.length, 0)
+      }
+    });
   } catch (error) {
     console.error('Error generating schema:', error);
     res.status(500).json({ error: error.message });

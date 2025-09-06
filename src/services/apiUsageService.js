@@ -130,24 +130,58 @@ class ApiUsageService {
   }
 
   /**
-   * Get user plan (simplified - you might want to get this from users table)
+   * Get user plan - handles both string XAuthUserId and UUID user_id
    */
   async getUserPlan(userId) {
     try {
       if (!userId) return 'basic';
       
-      // Try to get from users table
-      const { data, error } = await this.supabase
+      // First, try to get user by username (for string XAuthUserId)
+      const { data: user, error: userError } = await this.supabase
         .from('users')
-        .select('plan_id')
-        .eq('id', userId)
+        .select('id, plan_id')
+        .eq('username', userId)
         .single();
       
-      if (error || !data) {
-        return 'basic'; // Default to basic plan
+      if (userError || !user) {
+        // If not found by username, try as UUID directly
+        const { data: userByUuid, error: uuidError } = await this.supabase
+          .from('users')
+          .select('id, plan_id')
+          .eq('id', userId)
+          .single();
+        
+        if (uuidError || !userByUuid) {
+          console.log(`User not found: ${userId}, defaulting to basic plan`);
+          return 'basic';
+        }
+        
+        // Use the UUID user
+        user = userByUuid;
       }
       
-      return data.plan_id || 'basic';
+      // Now try to get active subscription for this user
+      const { data: subscription, error: subError } = await this.supabase
+        .from('user_subscriptions')
+        .select('plan_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single();
+      
+      if (!subError && subscription) {
+        console.log(`Found active subscription for user ${userId}: ${subscription.plan_id}`);
+        return subscription.plan_id || 'basic';
+      }
+      
+      // Fall back to user's plan_id from users table
+      if (user.plan_id) {
+        console.log(`Using user plan_id for user ${userId}: ${user.plan_id}`);
+        return user.plan_id;
+      }
+      
+      // Default to basic plan
+      console.log(`No plan found for user ${userId}, defaulting to basic`);
+      return 'basic';
     } catch (error) {
       console.error('Error getting user plan:', error);
       return 'basic';

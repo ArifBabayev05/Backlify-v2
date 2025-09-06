@@ -20,8 +20,10 @@ class UsageLimitMiddleware {
     return async (req, res, next) => {
       try {
         const userId = req.XAuthUserId || req.user?.username || 'anonymous';
-        const userPlan = req.userPlan || 'basic';
-        const limits = req.planLimits || this.planMiddleware.getPlanLimits(userPlan);
+        
+        // Get user's actual plan from database
+        const userPlan = await this.apiUsageService.getUserPlan(userId);
+        const limits = this.planMiddleware.getPlanLimits(userPlan);
 
         console.log(`Checking project limit for user: ${userId}, plan: ${userPlan}`);
 
@@ -53,6 +55,15 @@ class UsageLimitMiddleware {
         }
 
         console.log(`Project limit check passed: ${usage.projects_count}/${limits.projects}`);
+        
+        // Store usage info for later increment after successful generation
+        req.usageInfo = {
+          userId,
+          userPlan,
+          currentProjects: usage.projects_count,
+          maxProjects: limits.projects
+        };
+        
         next();
       } catch (error) {
         console.error('Error checking project limit:', error);
@@ -70,8 +81,10 @@ class UsageLimitMiddleware {
     return async (req, res, next) => {
       try {
         const userId = req.XAuthUserId || req.user?.username || 'anonymous';
-        const userPlan = req.userPlan || 'basic';
-        const limits = req.planLimits || this.planMiddleware.getPlanLimits(userPlan);
+        
+        // Get user's actual plan from database
+        const userPlan = await this.apiUsageService.getUserPlan(userId);
+        const limits = this.planMiddleware.getPlanLimits(userPlan);
         const apiId = req.params.apiId || req.query.apiId;
 
         console.log(`Checking request limit for user: ${userId}, plan: ${userPlan}, apiId: ${apiId}`);
@@ -121,8 +134,10 @@ class UsageLimitMiddleware {
     return async (req, res, next) => {
       try {
         const userId = req.XAuthUserId || req.user?.username || 'anonymous';
-        const userPlan = req.userPlan || 'basic';
-        const limits = req.planLimits || this.planMiddleware.getPlanLimits(userPlan);
+        
+        // Get user's actual plan from database
+        const userPlan = await this.apiUsageService.getUserPlan(userId);
+        const limits = this.planMiddleware.getPlanLimits(userPlan);
 
         console.log(`Checking both limits for user: ${userId}, plan: ${userPlan}`);
 
