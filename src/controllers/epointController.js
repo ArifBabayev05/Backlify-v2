@@ -16,12 +16,26 @@ class EpointController {
    */
   async savePaymentOrder(orderData) {
     try {
+      // Extract plan_id from description if not provided
+      let planId = orderData.plan_id;
+      if (!planId && orderData.description) {
+        if (orderData.description.includes('Pro Plan')) {
+          planId = 'pro';
+        } else if (orderData.description.includes('Enterprise Plan')) {
+          planId = 'enterprise';
+        } else if (orderData.description.includes('Basic Plan')) {
+          planId = 'basic';
+        } else {
+          planId = 'basic'; // Default fallback
+        }
+      }
+
       const { data, error } = await this.supabase
         .from('payment_orders')
         .insert([{
           order_id: orderData.order_id,
           user_id: orderData.user_id,
-          plan_id: orderData.plan_id || null,
+          plan_id: planId,
           api_id: orderData.api_id || null,
           amount: orderData.amount,
           currency: orderData.currency || 'AZN',
@@ -53,7 +67,7 @@ class EpointController {
           id: Date.now(),
           order_id: orderData.order_id,
           user_id: orderData.user_id,
-          plan_id: orderData.plan_id,
+          plan_id: planId,
           amount: orderData.amount,
           currency: orderData.currency || 'AZN',
           description: orderData.description,
@@ -233,7 +247,8 @@ class EpointController {
         success_redirect_url = process.env.SUCCESS_REDIRECT_URL,
         error_redirect_url = process.env.ERROR_REDIRECT_URL,
         currency = 'AZN',
-        language = 'az'
+        language = 'az',
+        plan_id = null
       } = req.body;
 
       // Validate required fields
@@ -269,6 +284,7 @@ class EpointController {
       const savedOrder = await this.savePaymentOrder({
         order_id,
         user_id: userId,
+        plan_id,
         amount,
         currency,
         description,
