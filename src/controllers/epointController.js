@@ -53,6 +53,41 @@ class EpointController {
 
       if (error) {
         console.error('Error saving payment order:', error);
+        
+        // Handle duplicate key error by generating a new unique order ID
+        if (error.code === '23505' && error.message.includes('duplicate key value violates unique constraint')) {
+          console.log('Duplicate order_id detected, generating new unique ID');
+          const newUniqueOrderId = `${orderData.order_id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          const { data: retryData, error: retryError } = await this.supabase
+            .from('payment_orders')
+            .insert([{
+              order_id: newUniqueOrderId,
+              user_id: orderData.user_id,
+              plan_id: planId,
+              api_id: orderData.api_id || null,
+              amount: orderData.amount,
+              currency: orderData.currency || 'AZN',
+              description: orderData.description,
+              status: 'pending',
+              payment_method: 'epoint',
+              success_redirect_url: orderData.success_redirect_url,
+              error_redirect_url: orderData.error_redirect_url,
+              epoint_data: orderData.epoint_data,
+              epoint_signature: orderData.epoint_signature,
+              epoint_redirect_url: orderData.epoint_redirect_url
+            }])
+            .select()
+            .single();
+          
+          if (retryError) {
+            console.error('Retry also failed:', retryError);
+            throw retryError;
+          }
+          
+          return retryData;
+        }
+        
         throw error;
       }
 
@@ -259,10 +294,13 @@ class EpointController {
         });
       }
 
-      // Prepare payment data
+      // Generate unique order ID to avoid duplicates
+      const uniqueOrderId = `${order_id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Prepare payment data with unique order ID
       const paymentData = this.epointService.prepareStandardPayment({
         amount,
-        order_id,
+        order_id: uniqueOrderId,
         description,
         success_redirect_url,
         error_redirect_url,
@@ -282,7 +320,7 @@ class EpointController {
 
       // Save payment order to database
       const savedOrder = await this.savePaymentOrder({
-        order_id,
+        order_id: uniqueOrderId,
         user_id: userId,
         plan_id,
         amount,
