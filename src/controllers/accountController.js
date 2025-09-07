@@ -252,21 +252,51 @@ class AccountController {
         });
       }
 
-      const { data: subscription, error } = await this.supabase
-        .from('user_subscriptions')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Try to get subscription from user_subscriptions table first
+      let subscription = null;
+      let subscriptionError = null;
+      
+      try {
+        const { data: subData, error: subError } = await this.supabase
+          .from('user_subscriptions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        subscription = subData;
+        subscriptionError = subError;
+      } catch (err) {
+        console.log('user_subscriptions table not available, falling back to users table');
+        subscriptionError = err;
+      }
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('Error fetching subscription:', error);
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to fetch subscription'
-        });
+      // If user_subscriptions table doesn't exist or has issues, fall back to users table
+      if (subscriptionError && subscriptionError.code !== 'PGRST116') {
+        console.log('Falling back to users table for subscription data');
+        
+        try {
+          const { data: userData, error: userError } = await this.supabase
+            .from('users')
+            .select('plan_id')
+            .eq('id', userId)
+            .single();
+          
+          if (!userError && userData) {
+            // Create a mock subscription object from user data
+            subscription = {
+              id: null,
+              plan_id: userData.plan_id || 'basic',
+              status: 'active',
+              start_date: new Date().toISOString(),
+              expiration_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() // 1 year from now
+            };
+          }
+        } catch (fallbackError) {
+          console.error('Fallback to users table also failed:', fallbackError);
+        }
       }
 
       // If no active subscription, return default free plan
@@ -275,7 +305,7 @@ class AccountController {
           success: true,
           data: {
             id: null,
-            plan: 'free',
+            plan: 'basic',
             planName: 'Free Plan',
             status: 'active',
             startDate: new Date().toISOString(),
@@ -504,16 +534,35 @@ class AccountController {
         .slice(0, 10);
 
       // Get user's subscription limit
-      const { data: subscription } = await this.supabase
-        .from('user_subscriptions')
-        .select('plan_id')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      let userPlan = 'basic';
+      
+      try {
+        const { data: subscription } = await this.supabase
+          .from('user_subscriptions')
+          .select('plan_id')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        userPlan = subscription?.plan_id || 'basic';
+      } catch (err) {
+        // Fallback to users table
+        try {
+          const { data: userData } = await this.supabase
+            .from('users')
+            .select('plan_id')
+            .eq('id', userId)
+            .single();
+          
+          userPlan = userData?.plan_id || 'basic';
+        } catch (fallbackErr) {
+          console.log('Using default basic plan');
+        }
+      }
 
-      const planFeatures = this.getPlanFeatures(subscription?.plan_id || 'free');
+      const planFeatures = this.getPlanFeatures(userPlan);
       const limit = planFeatures.apiCalls;
       const remaining = Math.max(0, limit - totalCalls);
 
