@@ -315,7 +315,6 @@ app.get('/admin/logs', async (req, res) => {
   setCorsHeaders(res, req); 
    
   try { 
-    // Create a Supabase client 
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY); 
      
     // Get filter params 
@@ -329,7 +328,9 @@ app.get('/admin/logs', async (req, res) => {
       from_date, 
       to_date, 
       min_time, 
-      max_time 
+      max_time,
+      is_api_request, // Yeni filter eklendi
+      api_id // Yeni filter eklendi
     } = req.query; 
      
     // Build the query 
@@ -337,15 +338,24 @@ app.get('/admin/logs', async (req, res) => {
       .from('api_logs') 
       .select('*', { count: 'exact' }); 
      
-    // XAuthUserId filtri - məcburi olaraq tətbiq edilir
+    // XAuthUserId filtri
     if (XAuthUserId) { 
       query = query.eq('XAuthUserId', XAuthUserId); 
     } else if (user) {
       query = query.eq('XAuthUserId', user); 
     } else {
-      // Əgər heç bir user filter göndərilməyibsə, boş nəticə qaytarırıq
-      // və ya default olaraq Admin loglarını gizlədirik
-      query = query.neq('XAuthUserId', 'Admin'); 
+      // Default olarak Admin loglarını gizle
+      query = query.neq('XAuthUserId', 'ADMIN'); 
+    }
+     
+    // API request filter
+    if (is_api_request !== undefined) {
+      query = query.eq('is_api_request', is_api_request === 'true');
+    }
+
+    // API ID filter
+    if (api_id) {
+      query = query.eq('api_id', api_id);
     }
      
     // Apply other filters 
@@ -358,8 +368,7 @@ app.get('/admin/logs', async (req, res) => {
     } 
      
     if (status) { 
-      // Extract status from the JSONB response field 
-      query = query.eq('response->status', parseInt(status)); 
+      query = query.eq('status_code', parseInt(status)); // Düzeltildi
     } 
      
     if (from_date) { 
@@ -378,7 +387,7 @@ app.get('/admin/logs', async (req, res) => {
       query = query.lte('response_time_ms', parseInt(max_time)); 
     } 
      
-    // Order by timestamp - limit aradan qaldırıldı
+    // Order by timestamp
     query = query.order('timestamp', { ascending: false }); 
      
     // Execute the query 
@@ -405,7 +414,9 @@ app.get('/admin/logs', async (req, res) => {
         from_date, 
         to_date, 
         min_time, 
-        max_time 
+        max_time,
+        is_api_request,
+        api_id
       } 
     }); 
   } catch (error) { 

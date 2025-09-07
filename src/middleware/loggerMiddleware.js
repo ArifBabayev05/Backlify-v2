@@ -11,23 +11,33 @@ async function resolveUserIdFromApiId(apiId) {
       process.env.SUPABASE_KEY || config.supabase.key
     );
     
-    // Get API metadata from api_registry table
+    // DEBUG: Gələn apiId-ni yoxlayaq
+    console.log(`[DEBUG] Trying to resolve api_id: ${apiId}`);
+
     const { data, error } = await supabase
       .from('api_registry')
       .select('metadata')
       .eq('api_id', apiId)
       .single();
     
+    // DEBUG: Supabase-dən gələn nəticəni yoxlayaq
+    if (error) {
+      console.error(`[DEBUG] Supabase error for api_id ${apiId}:`, error.message);
+    }
+    console.log(`[DEBUG] Supabase data for api_id ${apiId}:`, data);
+
     if (error || !data) {
       console.log(`API ${apiId} not found in registry`);
       return 'UNKNOWN';
     }
     
-    // Parse metadata to get XAuthUserId
     const metadata = typeof data.metadata === 'string' 
       ? JSON.parse(data.metadata) 
       : data.metadata;
     
+    // DEBUG: Metadata içindəki istifadəçini yoxlayaq
+    console.log(`[DEBUG] XAuthUserId from metadata: ${metadata.XAuthUserId}`);
+
     return metadata.XAuthUserId || 'UNKNOWN';
   } catch (error) {
     console.error('Error resolving user ID from API ID:', error);
@@ -64,6 +74,8 @@ function isSystemApiEndpoint(path) {
  */
 const loggerMiddleware = async (req, res, next) => {
   // Store original timestamp when request started
+  console.log(`🟩 [LOGGER START] Middleware triggered for path: ${req.originalUrl || req.url}`);
+
   const startTime = new Date();
   const requestTimestamp = startTime.toISOString();
   
@@ -89,7 +101,7 @@ const loggerMiddleware = async (req, res, next) => {
                     (req.body ? req.body.XAuthUserId : null);
   
   // If no XAuthUserId found and this is an API request, try to resolve from API ID
-  if (!XAuthUserId && isApiRequest && apiId) {
+  if (isApiRequest && apiId && (!XAuthUserId || XAuthUserId === 'default')) {
     try {
       console.log(`Resolving user ID for API: ${apiId}`);
       XAuthUserId = await resolveUserIdFromApiId(apiId);
@@ -104,7 +116,8 @@ const loggerMiddleware = async (req, res, next) => {
   if (!XAuthUserId || XAuthUserId === 'UNKNOWN') {
     XAuthUserId = isSystemApi ? 'ADMIN' : 'UNKNOWN';
   }
-  
+  console.log(`🟩 [FINAL CHECK] Logging request for user: "${XAuthUserId}" to endpoint: ${requestPath}`);
+
   // Set XAuthUserId on the request for other middleware to use
   req.XAuthUserId = XAuthUserId;
   
@@ -156,6 +169,7 @@ const loggerMiddleware = async (req, res, next) => {
   // After response is sent, log the complete request/response info
   res.on('finish', async () => {
     // Skip logging for static assets
+    console.log(`🟩 [LOGGER FINISH] Finish event triggered for path: ${req.originalUrl || req.url}`);
     if (shouldSkipLogging) {
       return;
     }
@@ -199,8 +213,8 @@ const loggerMiddleware = async (req, res, next) => {
         XAuthUserId: XAuthUserId,
         endpoint: requestInfo.path,
         method: requestInfo.method,
-        api_id: apiId, // This will be null for non-API requests
-        is_api_request: isApiRequest, // This will be true only for /api/{apiId} requests
+        api_id: isApiRequest ? apiId : null, // Only set api_id for actual API requests
+        is_api_request: isApiRequest, // Ensure this is always boolean
         request: requestInfo,
         response: responseInfo,
         response_time_ms: responseTime,
