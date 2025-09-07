@@ -253,7 +253,7 @@ class AccountController {
       }
 
       const { data: subscription, error } = await this.supabase
-        .from('subscriptions')
+        .from('user_subscriptions')
         .select('*')
         .eq('user_id', userId)
         .eq('status', 'active')
@@ -295,21 +295,21 @@ class AccountController {
       }
 
       // Get plan features
-      const planFeatures = this.getPlanFeatures(subscription.plan);
+      const planFeatures = this.getPlanFeatures(subscription.plan_id);
 
       res.json({
         success: true,
         data: {
           id: subscription.id,
-          plan: subscription.plan,
-          planName: this.getPlanName(subscription.plan),
+          plan: subscription.plan_id,
+          planName: this.getPlanName(subscription.plan_id),
           status: subscription.status,
           startDate: subscription.start_date,
-          endDate: subscription.end_date,
-          price: subscription.price,
-          currency: subscription.currency,
+          endDate: subscription.expiration_date,
+          price: 0, // Will be fetched from payment_orders if needed
+          currency: 'AZN',
           features: planFeatures,
-          autoRenew: subscription.auto_renew
+          autoRenew: true // Default for new subscriptions
         }
       });
 
@@ -505,15 +505,15 @@ class AccountController {
 
       // Get user's subscription limit
       const { data: subscription } = await this.supabase
-        .from('subscriptions')
-        .select('plan')
+        .from('user_subscriptions')
+        .select('plan_id')
         .eq('user_id', userId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
 
-      const planFeatures = this.getPlanFeatures(subscription?.plan || 'free');
+      const planFeatures = this.getPlanFeatures(subscription?.plan_id || 'free');
       const limit = planFeatures.apiCalls;
       const remaining = Math.max(0, limit - totalCalls);
 

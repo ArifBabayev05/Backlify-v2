@@ -21,6 +21,8 @@ class EpointController {
         .insert([{
           order_id: orderData.order_id,
           user_id: orderData.user_id || null,
+          plan_id: orderData.plan_id || null,
+          api_id: orderData.api_id || null,
           amount: orderData.amount,
           currency: orderData.currency || 'AZN',
           description: orderData.description,
