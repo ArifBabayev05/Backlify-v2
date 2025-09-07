@@ -28,6 +28,7 @@ const ensureCorsHeaders = (req, res, next) => {
       'Content-Length', 'Content-Type', 'Cookie', 'DNT', 'Date', 'Expect', 'Host', 'Keep-Alive',
       'Origin', 'Pragma', 'Referer', 'User-Agent', 'X-Requested-With', 'X-CSRF-Token', 'X-Forwarded-For',
       'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId', 'x-skip-auth',
+      'X-User-Plan', 'x-user-plan', 'X-USER-PLAN', 'Bearer',
       'X-API-Key', 'x-api-key', 'X-API-Version', 'X-Request-ID', 'X-Client-Version', 'X-Platform',
       'X-Payment-Token', 'X-Order-Id', 'X-Transaction-Id', 'X-Signature', 'X-Callback-Url', 'X-Plan-Id'
     ].join(', '));
@@ -170,6 +171,8 @@ const setCorsHeaders = (res, req = null) => {
       'Origin', 'Pragma', 'Referer', 'User-Agent', 'X-Requested-With', 'X-CSRF-Token', 'X-Forwarded-For',
       // Authentication headers
       'X-User-Id', 'x-user-id', 'X-USER-ID', 'xauthuserid', 'XAuthUserId', 'x-skip-auth', 'Bearer',
+      // User plan headers
+      'X-User-Plan', 'x-user-plan', 'X-USER-PLAN',
       // API headers
       'X-API-Key', 'x-api-key', 'X-API-Version', 'X-Request-ID', 'X-Client-Version', 'X-Platform',
       // Payment system headers
