@@ -189,7 +189,7 @@ class PaymentService {
       const { error } = await this.supabase
         .from('payment_orders')
         .update(updateData)
-        .eq('id', orderId);
+        .eq('order_id', orderId);
 
       if (error) throw error;
 
