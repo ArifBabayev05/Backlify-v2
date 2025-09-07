@@ -36,6 +36,30 @@ async function resolveUserIdFromApiId(apiId) {
 }
 
 /**
+ * Extract API ID from URL path
+ */
+function extractApiIdFromPath(path) {
+  // Match /api/{apiId}/anything or /api/{apiId}
+  const apiMatch = path.match(/^\/api\/([a-f0-9-]{36})(?:\/|$)/i);
+  return apiMatch ? apiMatch[1] : null;
+}
+
+/**
+ * Check if the request is to a system API endpoint
+ */
+function isSystemApiEndpoint(path) {
+  const systemApiPrefixes = [
+    '/api/user',
+    '/api/payment', 
+    '/api/admin',
+    '/api/debug',
+    '/api/auth'
+  ];
+  
+  return systemApiPrefixes.some(prefix => path.startsWith(prefix));
+}
+
+/**
  * Logger middleware that logs all API requests to Supabase
  */
 const loggerMiddleware = async (req, res, next) => {
@@ -43,55 +67,51 @@ const loggerMiddleware = async (req, res, next) => {
   const startTime = new Date();
   const requestTimestamp = startTime.toISOString();
   
+  // Get the request path
+  const requestPath = req.originalUrl || req.url;
+  
+  // Extract API ID from the path
+  const apiId = extractApiIdFromPath(requestPath);
+  
+  // Determine if this is a system API or user API request
+  const isSystemApi = isSystemApiEndpoint(requestPath);
+  const isApiRequest = apiId && !isSystemApi;
+  
   // First check if XAuthUserId is already set on the request object (from previous middleware)
-  const XAuthUserId = req.XAuthUserId || 
-                       req.headers['x-user-id'] || 
-                       req.headers['X-USER-ID'] || 
-                       req.headers['X-User-Id'] || 
-                       req.header('x-user-id') ||
-                       req.headers['xauthuserid'] ||
-                       req.headers['XAuthUserId'] ||
-                       req.header('xauthuserid') ||
-                       (req.body ? req.body.XAuthUserId : null) ||
-                       'ADMIN';
+  let XAuthUserId = req.XAuthUserId || 
+                    req.headers['x-user-id'] || 
+                    req.headers['X-USER-ID'] || 
+                    req.headers['X-User-Id'] || 
+                    req.header('x-user-id') ||
+                    req.headers['xauthuserid'] ||
+                    req.headers['XAuthUserId'] ||
+                    req.header('xauthuserid') ||
+                    (req.body ? req.body.XAuthUserId : null);
   
-  // Also set XAuthUserId on the request for other middleware to use
-  req.XAuthUserId = XAuthUserId;
-  
-  // Check if this is a request to a specific API
-  let apiId = null;
-  let isApiRequest = false;
-  let resolvedUserId = XAuthUserId; // Default to the provided XAuthUserId
-  
-  // Extract API ID from URL if it's an API request
-  const apiMatch = req.originalUrl.match(/\/api\/([^/]+)/);
-  if (apiMatch && apiMatch[1]) {
-    apiId = apiMatch[1];
-    
-    // Check if this is a system API (like /api/user/plans) that should not be counted
-    const systemApis = ['user', 'payment', 'admin', 'debug'];
-    const isSystemApi = systemApis.some(sysApi => req.originalUrl.startsWith(`/api/${sysApi}`));
-    
-    // Only count as API request if it's not a system API
-    if (!isSystemApi) {
-      isApiRequest = true;
-      
-      // Try to resolve the user ID from the API ID if XAuthUserId is not available or is 'ADMIN'
-      if (XAuthUserId === 'ADMIN' || !XAuthUserId) {
-        try {
-          resolvedUserId = await resolveUserIdFromApiId(apiId);
-        } catch (error) {
-          console.error('Error resolving user ID from API ID:', error);
-          resolvedUserId = 'UNKNOWN';
-        }
-      }
+  // If no XAuthUserId found and this is an API request, try to resolve from API ID
+  if (!XAuthUserId && isApiRequest && apiId) {
+    try {
+      console.log(`Resolving user ID for API: ${apiId}`);
+      XAuthUserId = await resolveUserIdFromApiId(apiId);
+      console.log(`Resolved user ID: ${XAuthUserId} for API: ${apiId}`);
+    } catch (error) {
+      console.error('Error resolving user ID from API ID:', error);
+      XAuthUserId = 'UNKNOWN';
     }
   }
+  
+  // Default to ADMIN for system APIs or if still no user found
+  if (!XAuthUserId || XAuthUserId === 'UNKNOWN') {
+    XAuthUserId = isSystemApi ? 'ADMIN' : 'UNKNOWN';
+  }
+  
+  // Set XAuthUserId on the request for other middleware to use
+  req.XAuthUserId = XAuthUserId;
   
   // Capture request details - sanitize sensitive information
   const requestInfo = {
     method: req.method,
-    path: req.originalUrl || req.url,
+    path: requestPath,
     query: JSON.stringify(sanitizeObject(req.query) || {}),
     // Only include body for non-GET requests and remove sensitive fields
     body: req.method !== 'GET' ? JSON.stringify(sanitizeObject(req.body) || {}) : '{}',
@@ -105,10 +125,12 @@ const loggerMiddleware = async (req, res, next) => {
   let shouldSkipLogging = false;
   
   // Skip logging for static content and very large responses
-  if (req.path.includes('/docs') && req.path.endsWith('.js') || 
+  if ((req.path.includes('/docs') && req.path.endsWith('.js')) || 
       req.path.endsWith('.css') || 
       req.path.endsWith('.png') || 
-      req.path.endsWith('.ico')) {
+      req.path.endsWith('.ico') ||
+      req.path.endsWith('.js') ||
+      req.path.endsWith('.map')) {
     shouldSkipLogging = true;
   }
   
@@ -157,8 +179,10 @@ const loggerMiddleware = async (req, res, next) => {
       // Add color indicators for status codes: green for success (including 304), red for errors
       const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
       const statusIndicator = isSuccess ? '✓' : '✗';
-      console.log(`[API LOG] ${resolvedUserId} - ${req.method} ${req.originalUrl} - ${res.statusCode} ${statusIndicator} (${responseTime}ms)${apiId ? ` [API: ${apiId}]` : ''}`);
+      const apiIndicator = isApiRequest ? `[API: ${apiId}]` : '';
+      console.log(`[API LOG] ${XAuthUserId} - ${req.method} ${requestPath} - ${res.statusCode} ${statusIndicator} (${responseTime}ms) ${apiIndicator}`);
       
+      // Define paths to exclude from logging
       const excludedPaths = ['/health', '/my-apis', '/', '/admin/users/search'];
 
       if (
@@ -168,16 +192,15 @@ const loggerMiddleware = async (req, res, next) => {
       ) {
         return;
       }
-
       
       // Log to Supabase
       await logToSupabase({
         timestamp: requestTimestamp,
-        XAuthUserId: resolvedUserId, // Use resolved user ID
+        XAuthUserId: XAuthUserId,
         endpoint: requestInfo.path,
         method: requestInfo.method,
-        api_id: apiId,
-        is_api_request: isApiRequest,
+        api_id: apiId, // This will be null for non-API requests
+        is_api_request: isApiRequest, // This will be true only for /api/{apiId} requests
         request: requestInfo,
         response: responseInfo,
         response_time_ms: responseTime,
