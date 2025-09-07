@@ -366,6 +366,7 @@ class AccountController {
         .insert([{
           order_id: orderId,
           user_id: userId,
+          plan_id: plan,
           amount: planPricing.price,
           currency: 'AZN',
           description: `Subscription upgrade to ${plan} plan`,

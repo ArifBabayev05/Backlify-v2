@@ -117,8 +117,8 @@ class PaymentService {
     
     const paymentData = this.epointService.prepareStandardPayment({
       amount: order.amount,
-      order_id: order.id,
-      description: `Backlify ${this.plans[order.plan_id].name}`,
+      order_id: order.order_id,
+      description: `Backlify ${this.plans[order.plan_id]?.name || order.plan_id} Plan`,
       success_redirect_url: process.env.SUCCESS_REDIRECT_URL,
       error_redirect_url: process.env.ERROR_REDIRECT_URL,
       currency: order.currency,
@@ -226,6 +226,7 @@ class PaymentService {
         status: 'active',
         start_date: new Date().toISOString(),
         expiration_date: expirationDate.toISOString(),
+        payment_order_id: order.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
