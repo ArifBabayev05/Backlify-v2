@@ -218,14 +218,41 @@ class PaymentService {
    */
   async activateUserPlan(orderId) {
     try {
+      console.log('🔄 Activating user plan for order:', orderId);
+      
       // Get order details
       const { data: order, error: orderError } = await this.supabase
         .from('payment_orders')
         .select('*')
-        .eq('id', orderId)
+        .eq('order_id', orderId)
         .single();
 
-      if (orderError) throw orderError;
+      if (orderError) {
+        console.error('❌ Error fetching order:', orderError);
+        throw orderError;
+      }
+
+      console.log('📋 Order details:', {
+        order_id: order.order_id,
+        user_id: order.user_id,
+        plan_id: order.plan_id,
+        status: order.status
+      });
+
+      // Get actual user UUID from users table
+      console.log('🔍 Looking up user UUID for username:', order.user_id);
+      const { data: user, error: userError } = await this.supabase
+        .from('users')
+        .select('id')
+        .eq('username', order.user_id)
+        .single();
+
+      if (userError) {
+        console.error('❌ Error fetching user UUID:', userError);
+        throw new Error(`User not found: ${order.user_id}`);
+      }
+
+      console.log('✅ Found user UUID:', user.id);
 
       // Calculate expiration date (30 days from now)
       const expirationDate = new Date();
@@ -233,7 +260,7 @@ class PaymentService {
 
       // Update or create user subscription
       const subscriptionData = {
-        user_id: order.user_id,
+        user_id: user.id,
         plan_id: order.plan_id,
         api_id: order.api_id,
         status: 'active',
