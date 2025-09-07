@@ -926,7 +926,7 @@ class EpointController {
       const { error } = await this.supabase
         .from('payment_orders')
         .update(updateData)
-        .eq('id', orderId);
+        .eq('order_id', orderId); // Use order_id instead of id
 
       if (error) {
         console.error('Error updating order status:', error);
