@@ -257,17 +257,31 @@ class AccountController {
       let subscriptionError = null;
       
       try {
-        const { data: subData, error: subError } = await this.supabase
-          .from('user_subscriptions')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(1)
+        // First, get the actual user UUID from users table
+        const { data: user, error: userError } = await this.supabase
+          .from('users')
+          .select('id')
+          .eq('username', userId)
           .single();
         
-        subscription = subData;
-        subscriptionError = subError;
+        if (userError || !user) {
+          console.log('User not found, falling back to users table');
+          subscriptionError = userError;
+        } else {
+          const actualUserId = user.id;
+          
+          const { data: subData, error: subError } = await this.supabase
+            .from('user_subscriptions')
+            .select('*')
+            .eq('user_id', actualUserId)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          
+          subscription = subData;
+          subscriptionError = subError;
+        }
       } catch (err) {
         console.log('user_subscriptions table not available, falling back to users table');
         subscriptionError = err;
@@ -566,23 +580,34 @@ class AccountController {
       let userPlan = 'basic';
       
       try {
-        const { data: subscription } = await this.supabase
-          .from('user_subscriptions')
-          .select('plan_id')
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(1)
+        // First, get the actual user UUID from users table
+        const { data: user, error: userError } = await this.supabase
+          .from('users')
+          .select('id')
+          .eq('username', userId)
           .single();
         
-        userPlan = subscription?.plan_id || 'basic';
+        if (!userError && user) {
+          const actualUserId = user.id;
+          
+          const { data: subscription } = await this.supabase
+            .from('user_subscriptions')
+            .select('plan_id')
+            .eq('user_id', actualUserId)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          
+          userPlan = subscription?.plan_id || 'basic';
+        }
       } catch (err) {
         // Fallback to users table
         try {
           const { data: userData } = await this.supabase
             .from('users')
             .select('plan_id')
-            .eq('id', userId)
+            .eq('username', userId)
             .single();
           
           userPlan = userData?.plan_id || 'basic';

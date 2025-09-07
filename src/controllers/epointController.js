@@ -441,6 +441,17 @@ class EpointController {
         });
       }
 
+      // If payment was successful, activate user plan
+      if (status === 'success' && order_id) {
+        try {
+          console.log(`Activating user plan for order: ${order_id}`);
+          await this.activateUserPlan(order_id);
+        } catch (activationError) {
+          console.error('Error activating user plan:', activationError);
+          // Don't fail the callback if plan activation fails
+        }
+      }
+
       // Mark callback as processed
       await this.supabase
         .from('payment_callbacks')
@@ -796,6 +807,106 @@ class EpointController {
         error: 'Failed to complete pre-authorization',
         code: 'PRE_AUTH_COMPLETION_FAILED'
       });
+    }
+  }
+
+  /**
+   * Activate user plan after successful payment
+   * @private
+   */
+  async activateUserPlan(orderId) {
+    try {
+      // Get order details
+      const { data: order, error: orderError } = await this.supabase
+        .from('payment_orders')
+        .select('*')
+        .eq('order_id', orderId)
+        .single();
+
+      if (orderError || !order) {
+        console.error('Order not found:', orderError);
+        return false;
+      }
+
+      if (!order.user_id || !order.plan_id) {
+        console.error('Missing user_id or plan_id in order');
+        return false;
+      }
+
+      // Get actual user UUID from users table
+      const { data: user, error: userError } = await this.supabase
+        .from('users')
+        .select('id')
+        .eq('username', order.user_id)
+        .single();
+
+      if (userError || !user) {
+        console.error('User not found:', userError);
+        return false;
+      }
+
+      const actualUserId = user.id;
+
+      // Calculate expiration date (1 year from now)
+      const expirationDate = new Date();
+      expirationDate.setFullYear(expirationDate.getFullYear() + 1);
+
+      // Create or update user subscription
+      const subscriptionData = {
+        user_id: actualUserId,
+        plan_id: order.plan_id,
+        status: 'active',
+        start_date: new Date().toISOString(),
+        expiration_date: expirationDate.toISOString(),
+        payment_order_id: order.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Try to insert new subscription
+      const { data: subscription, error: subscriptionError } = await this.supabase
+        .from('user_subscriptions')
+        .insert([subscriptionData])
+        .select()
+        .single();
+
+      if (subscriptionError) {
+        // If subscription already exists, update it
+        if (subscriptionError.code === '23505') {
+          console.log('Subscription already exists, updating...');
+          const { data: updatedSubscription, error: updateError } = await this.supabase
+            .from('user_subscriptions')
+            .update({
+              plan_id: order.plan_id,
+              status: 'active',
+              start_date: new Date().toISOString(),
+              expiration_date: expirationDate.toISOString(),
+              payment_order_id: order.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', actualUserId)
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error('Error updating subscription:', updateError);
+            return false;
+          }
+
+          console.log('Subscription updated successfully');
+          return true;
+        } else {
+          console.error('Error creating subscription:', subscriptionError);
+          return false;
+        }
+      }
+
+      console.log('Subscription created successfully');
+      return true;
+
+    } catch (error) {
+      console.error('Error activating user plan:', error);
+      return false;
     }
   }
 
