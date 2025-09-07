@@ -306,7 +306,7 @@ class AccountController {
           data: {
             id: null,
             plan: 'basic',
-            planName: 'Free Plan',
+            planName: 'Basic Plan',
             status: 'active',
             startDate: new Date().toISOString(),
             endDate: null,
@@ -314,7 +314,7 @@ class AccountController {
             currency: 'AZN',
             features: {
               apiCalls: 1000,
-              maxProjects: 1,
+              maxProjects: 2,
               prioritySupport: false,
               analytics: false,
               customIntegrations: false
