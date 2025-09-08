@@ -191,8 +191,11 @@ app.use(async (req, res, next) => {
     }
   }
   
-  // Then try from headers or body
+  // Then try from headers, body, or query parameters
   const XAuthUserId = tokenUsername || 
+                req.query.XAuthUserId ||
+                req.query.xauthuserid ||
+                req.query['x-user-id'] ||
                 req.headers['x-user-id'] || 
                 req.headers['X-USER-ID'] || 
                 req.headers['X-User-Id'] || 
@@ -207,6 +210,11 @@ app.use(async (req, res, next) => {
   // Don't use full bearer token as fallback - it would expose sensitive information
   // Instead use a default value
   
+  console.log('=== XAuthUserId EXTRACTION DEBUG ===');
+  console.log('tokenUsername:', tokenUsername);
+  console.log('req.query.XAuthUserId:', req.query.XAuthUserId);
+  console.log('req.query.xauthuserid:', req.query.xauthuserid);
+  console.log('req.query:', req.query);
   console.log('Using XAuthUserId:', XAuthUserId);
   
   // Set XAuthUserId on the request object
