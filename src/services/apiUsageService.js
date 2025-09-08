@@ -160,15 +160,17 @@ class ApiUsageService {
         user = userByUuid;
       }
       
-      // Now try to get active subscription for this user
-      const { data: subscription, error: subError } = await this.supabase
+      // Now try to get active subscription for this user (get the most recent one)
+      const { data: subscriptions, error: subError } = await this.supabase
         .from('user_subscriptions')
-        .select('plan_id')
+        .select('plan_id, created_at')
         .eq('user_id', user.id)
         .eq('status', 'active')
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1);
       
-      if (!subError && subscription) {
+      if (!subError && subscriptions && subscriptions.length > 0) {
+        const subscription = subscriptions[0];
         console.log(`Found active subscription for user ${userId}: ${subscription.plan_id}`);
         return subscription.plan_id || 'basic';
       }

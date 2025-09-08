@@ -788,7 +788,14 @@ app.post('/auth/login', async (req, res) => {
 // Debug endpoint to check user info and limits
 app.get('/debug-user-info', async (req, res) => {
   try {
-    const userId = req.XAuthUserId || req.user?.username || 'anonymous';
+    // Try multiple sources for user ID
+    const userId = req.XAuthUserId || 
+                   req.user?.username || 
+                   req.query.XAuthUserId || 
+                   req.headers['xauthuserid'] ||
+                   req.headers['XAuthUserId'] ||
+                   req.headers['x-user-id'] ||
+                   'anonymous';
     
     console.log('=== DEBUG USER INFO ===');
     console.log('XAuthUserId:', userId);
