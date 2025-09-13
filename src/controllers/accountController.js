@@ -1089,7 +1089,7 @@ class AccountController {
     const features = {
       free: {
         apiCalls: 1000,
-        maxProjects: 1,
+        maxProjects: 2,
         prioritySupport: false,
         analytics: false,
         customIntegrations: false
@@ -1123,8 +1123,8 @@ class AccountController {
 
   getPlanPricing(plan) {
     const pricing = {
-      pro: { price: 0.01, currency: 'AZN' },
-      enterprise: { price: 0.02, currency: 'AZN' }
+      pro: { price: 9.99, currency: 'AZN' },
+      enterprise: { price: 29.99, currency: 'AZN' }
     };
     return pricing[plan] || { price: 0, currency: 'AZN' };
   }
