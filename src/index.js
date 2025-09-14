@@ -1349,6 +1349,60 @@ app.get('/my-apis', (req, res) => {
   });
 });
 
+// Soft delete an API
+app.delete('/api/:apiId', async (req, res) => {
+  const { apiId } = req.params;
+  const XAuthUserId = req.XAuthUserId;
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  try {
+    const result = await apiGeneratorController.softDeleteAPI(apiId, XAuthUserId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting API:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Restore a soft-deleted API
+app.post('/api/:apiId/restore', async (req, res) => {
+  const { apiId } = req.params;
+  const XAuthUserId = req.XAuthUserId;
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  try {
+    const result = await apiGeneratorController.restoreAPI(apiId, XAuthUserId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error restoring API:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get soft-deleted APIs for a user
+app.get('/my-apis/deleted', (req, res) => {
+  const XAuthUserId = req.XAuthUserId;
+  const deletedApis = apiGeneratorController.getDeletedAPIs(XAuthUserId);
+  
+  // Ensure CORS headers are set
+  setCorsHeaders(res);
+  
+  res.json({
+    success: true,
+    apis: deletedApis
+  });
+});
+
 // Usage routes - must be before dynamic API routing
 app.use('/api/usage', usageRoutes);
 

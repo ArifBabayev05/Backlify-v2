@@ -1188,12 +1188,141 @@ Please modify the existing schema based on the modification request. Return the 
       const api = this.generatedApis.get(apiId);
       if (!api) return null;
       
+      // Skip soft-deleted APIs
+      if (api.deleted_at) {
+        return null;
+      }
+      
       // Return a deep clone to avoid shared references
       return JSON.parse(JSON.stringify({
         apiId,
         prompt: api.prompt,
         tables: api.tables?.map(t => t.originalName || t.name) || [],
         createdAt: api.createdAt || new Date().toISOString()
+      }));
+    }).filter(Boolean);
+  }
+
+  // Soft delete an API by API ID
+  async softDeleteAPI(apiId, XAuthUserId) {
+    try {
+      // Check if API exists
+      if (!this.generatedApis.has(apiId)) {
+        throw new Error('API not found');
+      }
+      
+      const api = this.generatedApis.get(apiId);
+      
+      // Verify ownership (optional security check)
+      if (api.XAuthUserId && api.XAuthUserId !== XAuthUserId) {
+        throw new Error('Unauthorized: You can only delete your own APIs');
+      }
+      
+      // Mark as soft deleted by adding deleted_at timestamp
+      const updatedApi = {
+        ...api,
+        deleted_at: new Date().toISOString(),
+        deleted_by: XAuthUserId
+      };
+      
+      // Update in memory
+      this.generatedApis.set(apiId, updatedApi);
+      
+      // Update in database through apiPublisher
+      const apiPublisher = require('../services/apiPublisher');
+      await apiPublisher.softDeleteAPI(apiId, {
+        deleted_at: updatedApi.deleted_at,
+        deleted_by: updatedApi.deleted_by
+      });
+      
+      console.log(`API ${apiId} soft deleted by user ${XAuthUserId}`);
+      
+      return {
+        success: true,
+        message: 'API deleted successfully',
+        apiId,
+        deleted_at: updatedApi.deleted_at
+      };
+    } catch (error) {
+      console.error('Error soft deleting API:', error);
+      throw error;
+    }
+  }
+
+  // Restore a soft-deleted API
+  async restoreAPI(apiId, XAuthUserId) {
+    try {
+      // Check if API exists
+      if (!this.generatedApis.has(apiId)) {
+        throw new Error('API not found');
+      }
+      
+      const api = this.generatedApis.get(apiId);
+      
+      // Check if API is actually soft-deleted
+      if (!api.deleted_at) {
+        throw new Error('API is not deleted');
+      }
+      
+      // Verify ownership (optional security check)
+      if (api.XAuthUserId && api.XAuthUserId !== XAuthUserId) {
+        throw new Error('Unauthorized: You can only restore your own APIs');
+      }
+      
+      // Remove soft delete markers
+      const updatedApi = {
+        ...api,
+        deleted_at: null,
+        deleted_by: null,
+        restored_at: new Date().toISOString(),
+        restored_by: XAuthUserId
+      };
+      
+      // Update in memory
+      this.generatedApis.set(apiId, updatedApi);
+      
+      // Update in database through apiPublisher
+      const apiPublisher = require('../services/apiPublisher');
+      await apiPublisher.restoreAPI(apiId, {
+        deleted_at: null,
+        deleted_by: null,
+        restored_at: updatedApi.restored_at,
+        restored_by: updatedApi.restored_by
+      });
+      
+      console.log(`API ${apiId} restored by user ${XAuthUserId}`);
+      
+      return {
+        success: true,
+        message: 'API restored successfully',
+        apiId,
+        restored_at: updatedApi.restored_at
+      };
+    } catch (error) {
+      console.error('Error restoring API:', error);
+      throw error;
+    }
+  }
+
+  // Get soft-deleted APIs for a user
+  getDeletedAPIs(XAuthUserId) {
+    const userApis = this.userApiMapping.get(XAuthUserId);
+    if (!userApis) {
+      return [];
+    }
+    
+    return Array.from(userApis).map(apiId => {
+      const api = this.generatedApis.get(apiId);
+      if (!api || !api.deleted_at) return null;
+      
+      // Return a deep clone to avoid shared references
+      return JSON.parse(JSON.stringify({
+        apiId,
+        prompt: api.prompt,
+        tables: api.tables?.map(t => t.originalName || t.name) || [],
+        createdAt: api.createdAt || new Date().toISOString(),
+        deleted_at: api.deleted_at,
+        deleted_by: api.deleted_by
       }));
     }).filter(Boolean);
   }

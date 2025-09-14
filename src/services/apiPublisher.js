@@ -164,6 +164,66 @@ class APIPublisher {
     return true;
   }
 
+  // Soft delete an API (mark as deleted but keep in database)
+  async softDeleteAPI(apiId, deleteInfo) {
+    try {
+      // Update in-memory metadata
+      if (this.apiMetadata.has(apiId)) {
+        const metadata = this.apiMetadata.get(apiId);
+        const updatedMetadata = {
+          ...metadata,
+          deleted_at: deleteInfo.deleted_at,
+          deleted_by: deleteInfo.deleted_by
+        };
+        this.apiMetadata.set(apiId, updatedMetadata);
+      }
+
+      // Update in database
+      await this._updateApiMetadata(apiId, {
+        deleted_at: deleteInfo.deleted_at,
+        deleted_by: deleteInfo.deleted_by
+      });
+
+      console.log(`API ${apiId} soft deleted in database`);
+      return true;
+    } catch (error) {
+      console.error('Error soft deleting API in publisher:', error);
+      throw error;
+    }
+  }
+
+  // Restore a soft-deleted API
+  async restoreAPI(apiId, restoreInfo) {
+    try {
+      // Update in-memory metadata
+      if (this.apiMetadata.has(apiId)) {
+        const metadata = this.apiMetadata.get(apiId);
+        const updatedMetadata = {
+          ...metadata,
+          deleted_at: restoreInfo.deleted_at,
+          deleted_by: restoreInfo.deleted_by,
+          restored_at: restoreInfo.restored_at,
+          restored_by: restoreInfo.restored_by
+        };
+        this.apiMetadata.set(apiId, updatedMetadata);
+      }
+
+      // Update in database
+      await this._updateApiMetadata(apiId, {
+        deleted_at: restoreInfo.deleted_at,
+        deleted_by: restoreInfo.deleted_by,
+        restored_at: restoreInfo.restored_at,
+        restored_by: restoreInfo.restored_by
+      });
+
+      console.log(`API ${apiId} restored in database`);
+      return true;
+    } catch (error) {
+      console.error('Error restoring API in publisher:', error);
+      throw error;
+    }
+  }
+
   // Get API metadata by API ID
   getApiMetadata(apiId) {
     return this.apiMetadata.get(apiId);
@@ -276,6 +336,80 @@ class APIPublisher {
     } catch (error) {
       console.error('Failed to remove API metadata:', error);
       console.error(error.stack);
+    }
+  }
+
+  // Update API metadata in database
+  async _updateApiMetadata(apiId, updateData) {
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const config = require('../config/config');
+      
+      // Check if Supabase config is present
+      if (!config.supabase || !config.supabase.url || !config.supabase.key) {
+        console.error('Supabase configuration is missing or incomplete. Check your .env file.');
+        return;
+      }
+      
+      const supabase = createClient(config.supabase.url, config.supabase.key);
+      
+      // Get current metadata
+      const { data: currentData, error: fetchError } = await supabase
+        .from('api_registry')
+        .select('metadata')
+        .eq('api_id', apiId)
+        .single();
+        
+      if (fetchError) {
+        console.error('Error fetching current API metadata:', fetchError);
+        throw fetchError;
+      }
+      
+      // Parse current metadata
+      let currentMetadata;
+      try {
+        currentMetadata = typeof currentData.metadata === 'string' 
+          ? JSON.parse(currentData.metadata) 
+          : currentData.metadata;
+      } catch (e) {
+        console.error('Error parsing current metadata:', e);
+        currentMetadata = {};
+      }
+      
+      // Merge with update data
+      const updatedMetadata = {
+        ...currentMetadata,
+        ...updateData,
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log(`Updating API ${apiId} metadata in database`);
+      
+      const { data, error } = await supabase
+        .from('api_registry')
+        .update({
+          metadata: JSON.stringify(updatedMetadata),
+          updated_at: new Date().toISOString()
+        })
+        .eq('api_id', apiId)
+        .select();
+        
+      if (error) {
+        console.error('Error updating API metadata:', error);
+        // Log more specific error details
+        if (error.code === '42P01') {
+          console.error('Table "api_registry" does not exist.');
+        } else {
+          console.error('Database error details:', error.details || 'No additional details');
+        }
+        throw error;
+      } else {
+        console.log(`Successfully updated API ${apiId} metadata in database.`);
+      }
+    } catch (error) {
+      console.error('Failed to update API metadata:', error);
+      console.error(error.stack);
+      throw error;
     }
   }
   
