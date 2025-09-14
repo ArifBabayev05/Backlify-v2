@@ -44,26 +44,9 @@ class ApiUsageService {
         log.api_id && log.status_code >= 200 && log.status_code < 400
       ).length;
       
-      // Count projects using getUserAPIs to respect soft delete
-      let projectsCount = 0;
-      if (userId) {
-        try {
-          const apiGeneratorController = require('../controllers/apiGeneratorController');
-          const userApis = apiGeneratorController.getUserAPIs(userId);
-          projectsCount = userApis.length;
-        } catch (error) {
-          console.error('Error getting user APIs for project count:', error);
-          // Fallback to log-based counting if controller fails
-          projectsCount = data.filter(log => 
-            log.endpoint === '/generate-schema' && log.status_code >= 200 && log.status_code < 400
-          ).length;
-        }
-      } else {
-        // If no userId provided, fallback to log-based counting
-        projectsCount = data.filter(log => 
-          log.endpoint === '/generate-schema' && log.status_code >= 200 && log.status_code < 400
-        ).length;
-      }
+      const projectsCount = data.filter(log => 
+        log.endpoint === '/generate-schema' && log.status_code >= 200 && log.status_code < 400
+      ).length;
       
       return {
         api_id: apiId,

@@ -520,12 +520,7 @@ class APIPublisher {
             tables: safeMetadata.tables || [],
             sql: safeMetadata.sql || '',
             prompt: safeMetadata.prompt || '',
-            createdAt: safeMetadata.createdAt || safeMetadata.created_at || new Date().toISOString(),
-            // Include soft delete information if present
-            deleted_at: safeMetadata.deleted_at || null,
-            deleted_by: safeMetadata.deleted_by || null,
-            restored_at: safeMetadata.restored_at || null,
-            restored_by: safeMetadata.restored_by || null
+            createdAt: safeMetadata.createdAt || safeMetadata.created_at || new Date().toISOString()
           };
           
           // Add to apiGeneratorController's generatedApis map

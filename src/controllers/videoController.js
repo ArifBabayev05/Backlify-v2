@@ -1,7 +1,7 @@
 const VideoService = require('../services/videoService');
-const { setCorsHeaders } = require('../middleware/corsMiddleware');
-const fs = require('fs');
+const { setCorsHeaders } = require('../middleware/corsMiddleware');const fs = require('fs');
 const path = require('path');
+
 
 class VideoController {
   constructor() {
@@ -133,30 +133,21 @@ class VideoController {
 
       // Debug logging
       console.log(`🎥 Streaming video: ${video.original_name}`);
-      console.log(`📁 File path: ${video.file_path}`);
       console.log(`📊 File size: ${video.file_size} bytes`);
-      console.log(`🔧 MIME type: ${video.mime_type}`);
+      console.log(`🔧 MIME type: ${video.mime_type}`);      console.log(`🔍 Data length: ${video.file_data ? video.file_data.length : 'null'}`);
+      console.log(`🔍 First 50 chars: ${video.file_data ? video.file_data.toString().substring(0, 50) : 'null'}`);
 
-      // Check if file exists on disk
-      if (!video.file_path || !fs.existsSync(video.file_path)) {
-        console.error(`❌ Video file not found on disk: ${video.file_path}`);
-        return res.status(404).json({
-          success: false,
-          error: 'Video file not found',
-          details: 'The video file could not be located on the server'
-        });
-      }
-
-      // Get file stats
-      const stats = fs.statSync(video.file_path);
-      const fileSize = stats.size;
+      console.log(`💾 Data type: ${typeof video.file_data}`);
+      console.log(`📦 Is Buffer: ${Buffer.isBuffer(video.file_data)}`);
+      console.log(`🔍 Data length: ${video.file_data ? video.file_data.length : 'null'}`);
+      console.log(`🔍 First 50 chars: ${video.file_data ? video.file_data.toString().substring(0, 50) : 'null'}`);
 
       // Set appropriate headers for video streaming
       res.set({
         'Content-Type': video.mime_type,
-        'Content-Length': fileSize,
+        'Content-Length': video.file_size,
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
         'Content-Disposition': `inline; filename="${video.original_name}"`,
         'X-Content-Type-Options': 'nosniff',
         'Access-Control-Allow-Origin': '*',
@@ -169,22 +160,36 @@ class VideoController {
       if (range) {
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const end = parts[1] ? parseInt(parts[1], 10) : video.file_size - 1;
         const chunksize = (end - start) + 1;
         
         res.status(206);
         res.set({
-          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Content-Range': `bytes ${start}-${end}/${video.file_size}`,
           'Content-Length': chunksize
         });
         
-        // Create read stream for the chunk
-        const stream = fs.createReadStream(video.file_path, { start, end });
-        stream.pipe(res);
+        // Send only the requested chunk - ensure it's a Buffer
+        let chunk;
+        if (Buffer.isBuffer(video.file_data)) {
+          chunk = video.file_data.slice(start, end + 1);
+        } else if (typeof video.file_data === 'string') {
+          chunk = Buffer.from(video.file_data, 'base64').slice(start, end + 1);
+        } else {
+          chunk = Buffer.from(video.file_data).slice(start, end + 1);
+        }
+        res.send(chunk);
       } else {
-        // Stream the entire file
-        const stream = fs.createReadStream(video.file_path);
-        stream.pipe(res);
+        // Send the entire video data - ensure it's a Buffer
+        let videoBuffer;
+        if (Buffer.isBuffer(video.file_data)) {
+          videoBuffer = video.file_data;
+        } else if (typeof video.file_data === 'string') {
+          videoBuffer = Buffer.from(video.file_data, 'base64');
+        } else {
+          videoBuffer = Buffer.from(video.file_data);
+        }
+        res.send(videoBuffer);
       }
     } catch (error) {
       console.error('Error in streamVideo controller:', error);
