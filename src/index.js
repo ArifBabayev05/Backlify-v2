@@ -839,24 +839,12 @@ app.get('/debug-user-info', async (req, res) => {
     const apiRequests = (logs || []).filter(log => log.is_api_request === true);
     const requestCount = apiRequests.length;
     
-    // Count projects (non-API requests that create APIs) - filter by user
-    const { data: allLogs, error: allLogsError } = await supabase
-      .from('api_logs')
-      .select('*')
-      .eq('XAuthUserId', userId);
+    // Count projects using getUserAPIs to respect soft delete
+    const apiGeneratorController = require('./controllers/apiGeneratorController');
+    const userApis = apiGeneratorController.getUserAPIs(userId);
+    const projectCount = userApis.length;
     
-    if (allLogsError) {
-      console.error('Error fetching all logs:', allLogsError);
-    }
-    
-    console.log(`Found ${allLogs ? allLogs.length : 0} total logs for user ${userId}`);
-    
-    const projectLogs = (allLogs || []).filter(log => 
-      log.endpoint === '/create-api-from-schema' && log.status_code === 200
-    );
-    const projectCount = projectLogs.length;
-    
-    console.log(`Project logs found: ${projectLogs.length}`);
+    console.log(`Found ${projectCount} active projects for user ${userId} (excluding soft-deleted)`);
     console.log(`API request logs found: ${apiRequests.length}`);
     
     // Get plan limits
