@@ -839,12 +839,11 @@ app.get('/debug-user-info', async (req, res) => {
     const apiRequests = (logs || []).filter(log => log.is_api_request === true);
     const requestCount = apiRequests.length;
     
-    // Count projects using getUserAPIs to respect soft delete
-    const apiGeneratorController = require('./controllers/apiGeneratorController');
+    // Count projects using the same logic as my-apis endpoint (excludes soft-deleted)
     const userApis = apiGeneratorController.getUserAPIs(userId);
     const projectCount = userApis.length;
     
-    console.log(`Found ${projectCount} active projects for user ${userId} (excluding soft-deleted)`);
+    console.log(`Active projects found: ${projectCount}`);
     console.log(`API request logs found: ${apiRequests.length}`);
     
     // Get plan limits
@@ -875,7 +874,7 @@ app.get('/debug-user-info', async (req, res) => {
         limits,
         isOverLimit: usage && usage.projectsCount >= limits.projects,
         logCount: logs ? logs.length : 0,
-        allLogCount: allLogs ? allLogs.length : 0
+        allLogCount: logs ? logs.length : 0
       }
     });
   } catch (error) {
