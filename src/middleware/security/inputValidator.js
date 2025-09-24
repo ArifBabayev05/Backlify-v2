@@ -321,8 +321,12 @@ const inputValidator = async (req, res, next) => {
                        req.path === '/modify-schema' || 
                        req.path === '/create-api-from-schema';
     
+    // Check if this is an email API - these need special handling for HTML content
+    const isEmailAPI = req.path.startsWith('/api/email/');
+    
     // For schema APIs, skip the SQL pattern check as they legitimately contain SQL-like content
-    if (!isSchemaAPI) {
+    // For email APIs, skip both SQL and XSS checks as they legitimately contain HTML content
+    if (!isSchemaAPI && !isEmailAPI) {
       // Check for attack patterns in request body, query params, and URL
       const bodyDetection = scanObjectForAttacks(req.body);
       const queryDetection = scanObjectForAttacks(req.query);
@@ -426,6 +430,33 @@ const inputValidator = async (req, res, next) => {
       
       // For schema API endpoints, we accept SQL-like content but still proceed
       console.log(`Schema API endpoint detected: ${req.path}, skipping SQL injection checks`);
+    } else if (isEmailAPI) {
+      // For email API endpoints, we accept HTML content but still check for basic security
+      console.log(`Email API endpoint detected: ${req.path}, skipping HTML content validation`);
+      
+      // Only check for obvious malicious patterns, not legitimate HTML
+      const basicSecurityCheck = checkBasicEmailSecurity(req.body);
+      
+      if (basicSecurityCheck.hasMaliciousContent) {
+        // Record security incident
+        await supabase.from('security_logs').insert([{
+          ip,
+          user_id: userId,
+          method: req.method,
+          path: req.path,
+          headers: req.headers,
+          type: 'EMAIL_MALICIOUS_CONTENT',
+          detection: basicSecurityCheck,
+          endpoint: req.originalUrl,
+          details: 'Malicious content detected in email API'
+        }]);
+        
+        // Block the request
+        return res.status(400).json({
+          error: 'Invalid input',
+          message: 'The email contains potentially malicious content'
+        });
+      }
     }
     
     // If we reach here, all checks have passed
