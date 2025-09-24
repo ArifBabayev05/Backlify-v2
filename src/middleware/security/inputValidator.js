@@ -308,6 +308,59 @@ const scanSchemaForSecurity = (obj) => {
 };
 
 /**
+ * Basic security check for email content
+ * @param {object} obj - The object to check
+ * @returns {object} Detection results
+ */
+const checkBasicEmailSecurity = (obj) => {
+  const detections = {
+    hasMaliciousContent: false,
+    fields: {}
+  };
+  
+  // Only check for obvious malicious patterns, not legitimate HTML
+  const maliciousPatterns = [
+    /<script.*>.*<\/script>/i,
+    /javascript:/i,
+    /onerror=/i,
+    /onload=/i,
+    /onclick=/i,
+    /eval\(/i,
+    /document\.cookie/i,
+    /alert\(/i
+  ];
+  
+  const scan = (object, path = '') => {
+    if (!object || typeof object !== 'object') return;
+    
+    for (const key in object) {
+      if (Object.prototype.hasOwnProperty.call(object, key)) {
+        const value = object[key];
+        const currentPath = path ? `${path}.${key}` : key;
+        
+        if (typeof value === 'string') {
+          for (const pattern of maliciousPatterns) {
+            if (pattern.test(value)) {
+              detections.fields[currentPath] = {
+                value: value.substring(0, 100),
+                pattern: pattern.toString()
+              };
+              detections.hasMaliciousContent = true;
+              break;
+            }
+          }
+        } else if (typeof value === 'object' && value !== null) {
+          scan(value, currentPath);
+        }
+      }
+    }
+  };
+  
+  scan(obj);
+  return detections;
+};
+
+/**
  * Middleware for input validation and sanitization
  * Prevents SQL injection and XSS attacks
  */
@@ -401,7 +454,7 @@ const inputValidator = async (req, res, next) => {
       if (req.params && typeof req.params === 'object') {
         sanitizeObject(req.params);
       }
-    } else {
+    } else if (isSchemaAPI) {
       // For schema API, just check for XSS patterns
       const bodyXssDetection = scanSchemaForSecurity(req.body);
       
