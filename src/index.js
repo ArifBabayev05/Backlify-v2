@@ -310,6 +310,21 @@ app.post('/auth/register', async (req, res) => {
       
     if (insertError) throw new Error(insertError.message);
     
+    // Send welcome email
+    try {
+      const emailService = require('./services/emailService');
+      await emailService.sendWelcomeEmail({
+        id: newUser[0].id,
+        email: newUser[0].email,
+        username: newUser[0].username,
+        full_name: newUser[0].full_name
+      });
+      console.log('✅ Welcome email sent to:', newUser[0].email);
+    } catch (emailError) {
+      console.error('⚠️ Failed to send welcome email:', emailError);
+      // Don't fail the registration if email fails
+    }
+
     // Return the created user info (without password)
     res.status(201).json({
       success: true,
