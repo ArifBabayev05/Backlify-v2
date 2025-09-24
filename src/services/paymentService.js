@@ -306,9 +306,28 @@ class PaymentService {
           .single();
         
         if (userData) {
-          await emailService.sendUpgradeEmail(userData, {
-            name: order.plan_id.charAt(0).toUpperCase() + order.plan_id.slice(1) + ' Plan'
-          });
+          // Calculate expiration date
+          const expirationDate = new Date();
+          expirationDate.setDate(expirationDate.getDate() + 30);
+          
+          // Get plan details based on plan_id
+          const planDetails = {
+            name: order.plan_id.charAt(0).toUpperCase() + order.plan_id.slice(1) + ' Plan',
+            amount: order.amount,
+            currency: order.currency || 'AZN',
+            expirationDate: expirationDate.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            }),
+            paymentMethod: order.payment_method || 'Epoint',
+            requestsLimit: order.plan_id === 'pro' ? '10,000/month' : order.plan_id === 'enterprise' ? 'Unlimited' : '1,000/month',
+            projectsLimit: order.plan_id === 'pro' ? '10' : order.plan_id === 'enterprise' ? 'Unlimited' : '2',
+            supportLevel: order.plan_id === 'pro' ? 'Priority Support' : order.plan_id === 'enterprise' ? '24/7 Support' : 'Email Support',
+            customDomain: order.plan_id !== 'basic'
+          };
+
+          await emailService.sendUpgradeEmail(userData, planDetails);
           console.log('✅ Upgrade email sent to:', userData.email);
         }
       } catch (emailError) {
