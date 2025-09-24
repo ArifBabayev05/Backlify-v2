@@ -1116,17 +1116,13 @@ class EmailService {
                     <span class="plan-label">Support Level</span>
                     <span class="plan-value">${planData.supportLevel || 'Priority Support'}</span>
                 </div>
-                <div class="plan-item">
-                    <span class="plan-label">Custom Domain</span>
-                    <span class="plan-value">${planData.customDomain ? '✅ Yes' : '❌ No'}</span>
-                </div>
             </div>
             
             <p>
                 Ready to explore your new features? Head over to your dashboard and start building with your enhanced capabilities!
             </p>
 
-            <a href="https://backlify.app/dashboard" class="cta-button">
+            <a href="https://backlify.app" class="cta-button">
                 🚀 Go to Dashboard
             </a>
 
