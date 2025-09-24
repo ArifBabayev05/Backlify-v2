@@ -115,6 +115,12 @@ class UsageLimitMiddleware {
       try {
         const userId = req.XAuthUserId || req.user?.username || 'anonymous';
         
+        // Skip usage limit check for email routes
+        if (req.path.startsWith('/api/email/')) {
+          console.log('Skipping usage limit check for email routes');
+          return next();
+        }
+        
         // Get user's actual plan from database
         const userPlan = await this.apiUsageService.getUserPlan(userId);
         const limits = this.planMiddleware.getPlanLimits(userPlan);

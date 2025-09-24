@@ -16,6 +16,7 @@ const security = require('./security');
 const { initializeSecurityTables } = require('./utils/security/initializeSecurityTables');
 const EpointTablesSetup = require('./utils/setup/epointTables');
 const AccountTablesSetup = require('./utils/setup/accountTables');
+const EmailTablesSetup = require('./utils/setup/emailTables');
 
 // Load Account Settings routes
 const accountRoutes = require('./routes/accountRoutes');
@@ -120,6 +121,13 @@ const accountTablesSetup = new AccountTablesSetup();
 accountTablesSetup.createTables().catch(err => {
   console.error('Error initializing Account Settings tables:', err);
   console.warn('Account Settings features might not work correctly');
+});
+
+// Initialize Email tables
+const emailTablesSetup = new EmailTablesSetup();
+emailTablesSetup.createTables().catch(err => {
+  console.error('Error initializing Email tables:', err);
+  console.warn('Email features might not work correctly');
 });
 
 // ========== UNIVERSAL CORS CONFIGURATION ==========
@@ -1398,8 +1406,8 @@ app.use('/api/:apiId', usageLimitMiddleware.checkRequestLimit(), async (req, res
   try {
     const apiId = req.params.apiId;
     
-    // Skip this middleware for payment routes, health checks, video routes, user routes, and usage routes
-    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user' || apiId === 'usage') {
+    // Skip this middleware for payment routes, health checks, video routes, user routes, usage routes, and email routes
+    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user' || apiId === 'usage' || apiId === 'email') {
       return next();
     }
   
@@ -1830,6 +1838,10 @@ app.use('/auth', googleAuthRoutes);
 // Add video routes (use different path to avoid conflicts with dynamic API routing)
 const videoRoutes = require('./routes/videoRoutes');
 app.use('/video', videoRoutes);
+
+// Add email routes
+const emailRoutes = require('./routes/emailRoutes');
+app.use('/api/email', emailRoutes);
 
 // Add debug routes (for development/testing)
 const debugRoutes = require('./routes/debugRoutes');

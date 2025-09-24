@@ -16,7 +16,8 @@
     "test-cors": "node src/tools/test-cors.js",
     "test-google-auth": "node src/tools/test-google-auth.js",
     "test-video": "node src/tools/test-video-endpoints.js",
-    "test-video-streaming": "node src/tools/test-video-streaming.js"
+    "test-video-streaming": "node src/tools/test-video-streaming.js",
+    "test-email": "node test-email.js"
   },
   "keywords": [
     "api",
@@ -43,6 +44,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "nodemailer": "^7.0.6",
     "pg": "^8.14.0",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",
