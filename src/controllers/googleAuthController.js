@@ -216,6 +216,22 @@ class GoogleAuthController {
       }
 
       console.log('✅ Google user created successfully:', data.username);
+      
+      // Send welcome email
+      try {
+        const emailService = require('../services/emailService');
+        await emailService.sendWelcomeEmail({
+          id: data.id,
+          email: data.email,
+          username: data.username,
+          full_name: data.full_name
+        });
+        console.log('✅ Welcome email sent to:', data.email);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send welcome email:', emailError);
+        // Don't fail the registration if email fails
+      }
+      
       return data;
     } catch (error) {
       console.error('💥 Error creating Google user:', error);

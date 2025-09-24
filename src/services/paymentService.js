@@ -296,6 +296,26 @@ class PaymentService {
         if (error) throw error;
       }
 
+      // Send upgrade email
+      try {
+        const emailService = require('./emailService');
+        const { data: userData } = await this.supabase
+          .from('users')
+          .select('email, username, full_name')
+          .eq('id', user.id)
+          .single();
+        
+        if (userData) {
+          await emailService.sendUpgradeEmail(userData, {
+            name: order.plan_id.charAt(0).toUpperCase() + order.plan_id.slice(1) + ' Plan'
+          });
+          console.log('✅ Upgrade email sent to:', userData.email);
+        }
+      } catch (emailError) {
+        console.error('⚠️ Failed to send upgrade email:', emailError);
+        // Don't fail the activation if email fails
+      }
+
       return true;
     } catch (error) {
       console.error('Error activating user plan:', error);

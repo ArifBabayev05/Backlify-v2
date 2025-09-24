@@ -464,6 +464,691 @@ class EmailService {
       };
     }
   }
+
+  /**
+   * Generate welcome email HTML template
+   * @param {object} userData - User data
+   * @returns {string} HTML template
+   */
+  generateWelcomeEmailTemplate(userData) {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome to Backlify AI</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          :root {
+            --bg-dark: #0B0D17;
+            --bg-card: #1A1D29;
+            --text-primary: #FFFFFF;
+            --text-secondary: #B8BCC8;
+            --accent-primary: #00D2FF;
+            --accent-secondary: #3A7BD5;
+            --accent-tertiary: #8B5CF6;
+            --success-color: #10B981;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --gradient-primary: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%);
+          }
+
+          body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: linear-gradient(135deg, #0B0D17 0%, #1A1D29 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+          }
+
+          .email-container {
+            max-width: 600px;
+            width: 100%;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+          }
+
+          .header {
+            background: var(--gradient-primary);
+            padding: 50px 40px;
+            text-align: center;
+            color: white;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: shimmer 4s ease-in-out infinite;
+          }
+
+          @keyframes shimmer {
+            0%, 100% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            50% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+          }
+
+          .header h1 {
+            font-size: 36px;
+            font-weight: 800;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+          }
+
+          .header p {
+            font-size: 20px;
+            font-weight: 500;
+            opacity: 0.95;
+            margin: 15px 0 0;
+            position: relative;
+            z-index: 1;
+          }
+
+          .content {
+            padding: 40px;
+            text-align: left;
+          }
+
+          .content h2 {
+            font-size: 28px;
+            color: var(--text-primary);
+            margin-top: 0;
+            margin-bottom: 25px;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+          }
+
+          .content p {
+            font-size: 17px;
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            line-height: 1.7;
+          }
+          
+          .welcome-message {
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.1) 0%, rgba(58, 123, 213, 0.1) 100%);
+            border-left: 4px solid var(--accent-primary);
+            border-radius: 8px;
+            padding: 25px;
+            margin: 30px 0;
+          }
+          
+          .welcome-message p {
+            margin: 0;
+            font-style: italic;
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.6;
+          }
+
+          .info-section {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 25px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+          }
+          
+          .info-section h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin-top: 0;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+
+          .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          }
+
+          .info-item:last-child {
+            border-bottom: none;
+          }
+
+          .info-label {
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+          }
+
+          .info-value {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 15px;
+          }
+
+          .status-active {
+            color: var(--success-color) !important;
+            font-weight: 700;
+          }
+
+          .cta-button {
+            display: block;
+            width: fit-content;
+            margin: 40px auto 0;
+            background: var(--gradient-primary);
+            color: white;
+            text-decoration: none;
+            padding: 18px 35px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
+            transition: all 0.3s ease;
+            text-align: center;
+          }
+
+          .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0, 210, 255, 0.4);
+          }
+
+          .footer {
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
+            padding: 40px;
+            text-align: center;
+            font-size: 15px;
+            border-top: 1px solid var(--border-color);
+          }
+
+          .footer p {
+            margin: 0;
+            color: var(--text-secondary);
+            line-height: 1.6;
+          }
+          
+          .footer-links {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+          }
+          
+          .footer-link {
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s ease;
+          }
+
+          .footer-link:hover {
+            color: var(--accent-secondary);
+          }
+          
+          @media (max-width: 600px) {
+            body {
+              padding: 10px;
+            }
+            .email-container {
+              border-radius: 12px;
+            }
+            .header, .content, .footer {
+              padding: 30px 20px;
+            }
+            .header h1 {
+              font-size: 30px;
+            }
+            .header p {
+              font-size: 18px;
+            }
+            .content h2 {
+              font-size: 24px;
+            }
+            .footer-links {
+              flex-direction: column;
+              gap: 10px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+          <div class="header">
+            <h1>🚀 Welcome to Backlify AI</h1>
+            <p>Your AI-powered backend journey starts now</p>
+          </div>
+          
+          <div class="content">
+            <h2>Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
+            
+            <p>
+              Welcome to Backlify AI! We're thrilled to have you join our community of developers who are revolutionizing backend development with the power of artificial intelligence.
+            </p>
+            
+            <div class="welcome-message">
+              <p>
+                "We built Backlify to take the friction out of backend development, so you can focus on building amazing things, not managing servers or writing boilerplate code."
+              </p>
+            </div>
+            
+            <p>
+              Your account is all set up and ready to go. Here are your account details:
+            </p>
+            
+            <div class="info-section">
+              <h3>📋 Account Details</h3>
+              <div class="info-item">
+                <span class="info-label">Account Status</span>
+                <span class="info-value status-active">✅ Active</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Email Address</span>
+                <span class="info-value">${userData.email}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Registration Date</span>
+                <span class="info-value">${currentDate}</span>
+              </div>
+            </div>
+            
+            <p>
+              Ready to build something amazing? Head over to your dashboard and describe the backend you need. Our AI will handle the rest!
+            </p>
+
+            <a href="https://backlify.app/" class="cta-button">
+              🚀 Go to Dashboard
+            </a>
+            
+          </div>
+          
+          <div class="footer">
+            <p><strong>Cheers,</strong></p>
+            <p>The Backlify AI Team</p>
+            <div class="footer-links">
+              <a href="https://backlify.app/docs" class="footer-link">📚 Documentation</a>
+              <a href="https://backlify.app/support" class="footer-link">💬 Support</a>
+              <a href="https://backlify.app/contact" class="footer-link">📧 Contact Us</a>
+            </div>
+            <p style="margin-top: 20px; font-size: 13px; opacity: 0.7;">© 2025 Backlify AI. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>`;
+  }
+
+  /**
+   * Generate plan upgrade email HTML template
+   * @param {object} userData - User data
+   * @param {object} planData - Plan data
+   * @returns {string} HTML template
+   */
+  generateUpgradeEmailTemplate(userData, planData) {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Plan Upgraded - Backlify AI</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          :root {
+            --bg-dark: #0B0D17;
+            --bg-card: #1A1D29;
+            --text-primary: #FFFFFF;
+            --text-secondary: #B8BCC8;
+            --accent-primary: #00D2FF;
+            --accent-secondary: #3A7BD5;
+            --accent-tertiary: #8B5CF6;
+            --success-color: #10B981;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --gradient-primary: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%);
+          }
+
+          body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: linear-gradient(135deg, #0B0D17 0%, #1A1D29 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+          }
+
+          .email-container {
+            max-width: 600px;
+            width: 100%;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+          }
+
+          .header {
+            background: var(--gradient-primary);
+            padding: 50px 40px;
+            text-align: center;
+            color: white;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .header h1 {
+            font-size: 36px;
+            font-weight: 800;
+            margin: 0;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+          }
+
+          .header p {
+            font-size: 20px;
+            font-weight: 500;
+            opacity: 0.95;
+            margin: 15px 0 0;
+          }
+
+          .content {
+            padding: 40px;
+            text-align: left;
+          }
+
+          .content h2 {
+            font-size: 28px;
+            color: var(--text-primary);
+            margin-top: 0;
+            margin-bottom: 25px;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+          }
+
+          .upgrade-message {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(0, 210, 255, 0.1) 100%);
+            border-left: 4px solid var(--success-color);
+            border-radius: 8px;
+            padding: 25px;
+            margin: 30px 0;
+          }
+          
+          .upgrade-message p {
+            margin: 0;
+            font-style: italic;
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.6;
+          }
+
+          .plan-section {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 25px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+          }
+          
+          .plan-section h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin-top: 0;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+
+          .plan-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          }
+
+          .plan-item:last-child {
+            border-bottom: none;
+          }
+
+          .plan-label {
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+          }
+
+          .plan-value {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 15px;
+          }
+
+          .status-upgraded {
+            color: var(--success-color) !important;
+            font-weight: 700;
+          }
+
+          .cta-button {
+            display: block;
+            width: fit-content;
+            margin: 40px auto 0;
+            background: var(--gradient-primary);
+            color: white;
+            text-decoration: none;
+            padding: 18px 35px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
+            transition: all 0.3s ease;
+            text-align: center;
+          }
+
+          .footer {
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
+            padding: 40px;
+            text-align: center;
+            font-size: 15px;
+            border-top: 1px solid var(--border-color);
+          }
+
+          .footer p {
+            margin: 0;
+            color: var(--text-secondary);
+            line-height: 1.6;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+          <div class="header">
+            <h1>🎉 Plan Upgraded!</h1>
+            <p>You've unlocked new possibilities</p>
+          </div>
+          
+          <div class="content">
+            <h2>Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
+            
+            <p>
+              Congratulations! Your Backlify AI plan has been successfully upgraded. You now have access to more powerful features and higher limits to supercharge your backend development.
+            </p>
+            
+            <div class="upgrade-message">
+              <p>
+                "With your new plan, you can build bigger, better, and more complex backends without worrying about limits. The sky's the limit!"
+              </p>
+            </div>
+            
+            <div class="plan-section">
+              <h3>📈 Your New Plan</h3>
+              <div class="plan-item">
+                <span class="plan-label">Plan Name</span>
+                <span class="plan-value status-upgraded">${planData.name || 'Upgraded Plan'}</span>
+              </div>
+              <div class="plan-item">
+                <span class="plan-label">Upgrade Date</span>
+                <span class="plan-value">${currentDate}</span>
+              </div>
+              <div class="plan-item">
+                <span class="plan-label">Status</span>
+                <span class="plan-value status-upgraded">✅ Active</span>
+              </div>
+            </div>
+            
+            <p>
+              Ready to explore your new features? Head over to your dashboard and start building with your enhanced capabilities!
+            </p>
+
+            <a href="https://backlify.app/" class="cta-button">
+              🚀 Go to Dashboard
+            </a>
+            
+          </div>
+          
+          <div class="footer">
+            <p><strong>Happy Building!</strong></p>
+            <p>The Backlify AI Team</p>
+          </div>
+        </div>
+      </body>
+      </html>`;
+  }
+
+  /**
+   * Send welcome email to new user
+   * @param {object} userData - User data
+   * @returns {object} Result
+   */
+  async sendWelcomeEmail(userData) {
+    try {
+      console.log('=== SENDING WELCOME EMAIL ===');
+      console.log('User data:', userData);
+
+      // Check if welcome email was already sent
+      const userId = userData.id || userData.user_id;
+      if (userId && await this.wasEmailSent(userId, 'welcome')) {
+        console.log('Welcome email already sent to user:', userId);
+        return { success: true, message: 'Welcome email already sent' };
+      }
+
+      const html = this.generateWelcomeEmailTemplate(userData);
+      
+      const emailData = {
+        to: userData.email,
+        from: 'info@backlify.app',
+        subject: '🚀 Welcome to Backlify AI - Your AI Backend Journey Starts Now!',
+        html: html,
+        metadata: {
+          type: 'welcome',
+          userId: userId,
+          username: userData.username,
+          registrationDate: new Date().toISOString()
+        }
+      };
+
+      return await this.sendFlexibleEmail(emailData);
+    } catch (error) {
+      console.error('Error sending welcome email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send plan upgrade email
+   * @param {object} userData - User data
+   * @param {object} planData - Plan data
+   * @returns {object} Result
+   */
+  async sendUpgradeEmail(userData, planData) {
+    try {
+      console.log('=== SENDING UPGRADE EMAIL ===');
+      console.log('User data:', userData);
+      console.log('Plan data:', planData);
+
+      // Check if upgrade email was already sent for this plan
+      const userId = userData.id || userData.user_id;
+      if (userId && await this.wasEmailSent(userId, 'upgrade')) {
+        console.log('Upgrade email already sent to user:', userId);
+        return { success: true, message: 'Upgrade email already sent' };
+      }
+
+      const html = this.generateUpgradeEmailTemplate(userData, planData);
+      
+      const emailData = {
+        to: userData.email,
+        from: 'info@backlify.app',
+        subject: '🎉 Plan Upgraded! - Unlock New Possibilities with Backlify AI',
+        html: html,
+        metadata: {
+          type: 'upgrade',
+          userId: userId,
+          username: userData.username,
+          planName: planData.name,
+          upgradeDate: new Date().toISOString()
+        }
+      };
+
+      return await this.sendFlexibleEmail(emailData);
+    } catch (error) {
+      console.error('Error sending upgrade email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Check if email was already sent to prevent duplicates
+   * @param {string} userId - User ID
+   * @param {string} emailType - Type of email (welcome, upgrade)
+   * @returns {boolean} True if email was already sent
+   */
+  async wasEmailSent(userId, emailType) {
+    try {
+      const { data, error } = await this.supabase
+        .from('email_logs')
+        .select('id')
+        .eq('metadata->>userId', userId)
+        .eq('metadata->>type', emailType)
+        .limit(1);
+
+      if (error) {
+        console.error('Error checking email history:', error);
+        return false; // If we can't check, allow sending
+      }
+
+      return data && data.length > 0;
+    } catch (error) {
+      console.error('Error in wasEmailSent:', error);
+      return false; // If we can't check, allow sending
+    }
+  }
 }
 
 module.exports = new EmailService();
