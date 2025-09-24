@@ -483,320 +483,181 @@ class EmailService {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome to Backlify AI</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-dark: #0B0D17;
-            --bg-card: #1A1D29;
-            --text-primary: #FFFFFF;
-            --text-secondary: #B8BCC8;
-            --accent-primary: #00D2FF;
-            --accent-secondary: #3A7BD5;
-            --accent-tertiary: #8B5CF6;
-            --success-color: #10B981;
-            --border-color: rgba(255, 255, 255, 0.1);
-            --gradient-primary: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%);
-            --gradient-secondary: linear-gradient(135deg, rgba(0, 210, 255, 0.1) 0%, rgba(58, 123, 213, 0.1) 100%);
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            line-height: 1.6;
-            color: var(--text-primary);
-            background: linear-gradient(135deg, #0B0D17 0%, #1A1D29 100%);
-            margin: 0;
-            padding: 20px;
-            min-height: 100vh;
-        }
-
-        .email-container {
-            max-width: 600px;
-            width: 100%;
-            margin: 0 auto;
-            background: var(--bg-card);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            border: 1px solid var(--border-color);
-        }
-
-        .header {
-            background: var(--gradient-primary);
-            padding: 50px 40px;
-            text-align: center;
-            color: white;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            animation: shimmer 4s ease-in-out infinite;
-        }
-
-        @keyframes shimmer {
-            0%, 100% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-            50% { transform: translateX(100%) translateY(100%) rotate(45deg); }
-        }
-
-        .header h1 {
-            font-size: 36px;
-            font-weight: 800;
-            margin: 0;
-            position: relative;
-            z-index: 1;
-            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-        }
-
-        .header p {
-            font-size: 20px;
-            font-weight: 500;
-            opacity: 0.95;
-            margin: 15px 0 0;
-            position: relative;
-            z-index: 1;
-        }
-
-        .content {
-            padding: 40px;
-            text-align: left;
-        }
-
-        .content h2 {
-            font-size: 28px;
-            color: var(--text-primary);
-            margin-top: 0;
-            margin-bottom: 25px;
-            font-weight: 700;
-            background: var(--gradient-primary);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .content p {
-            font-size: 17px;
-            color: var(--text-secondary);
-            margin-bottom: 30px;
-            line-height: 1.7;
-        }
-
-        .card {
-            background: var(--gradient-secondary);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            margin: 30px 0;
-            backdrop-filter: blur(10px);
-        }
-
-        .card-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--accent-primary);
-            margin-top: 0;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .plan-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .plan-item:last-child {
-            border-bottom: none;
-        }
-
-        .plan-label {
-            color: var(--text-secondary);
-            font-size: 15px;
-            font-weight: 500;
-        }
-
-        .plan-value {
-            color: var(--text-primary);
-            font-weight: 600;
-            font-size: 15px;
-        }
-
-        .plan-value.active {
-            color: var(--success-color);
-            font-weight: 700;
-        }
-
-        .cta-button {
-            display: block;
-            width: fit-content;
-            margin: 40px auto 0;
-            background: var(--gradient-primary);
-            color: white;
-            text-decoration: none;
-            padding: 18px 35px;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: 18px;
-            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-
-        .cta-button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 40px rgba(0, 210, 255, 0.4);
-        }
-
-        .footer {
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
-            padding: 40px;
-            text-align: center;
-            font-size: 15px;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .footer p {
-            margin: 0;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-
-        .footer-links {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .footer-link {
-            color: var(--accent-primary);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s ease;
-        }
-
-        .footer-link:hover {
-            color: var(--accent-secondary);
-        }
-
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
-            .email-container {
-                border-radius: 12px;
-            }
-            .header, .content, .footer {
-                padding: 30px 20px;
-            }
-            .header h1 {
-                font-size: 30px;
-            }
-            .header p {
-                font-size: 18px;
-            }
-            .content h2 {
-                font-size: 24px;
-            }
-            .footer-links {
-                flex-direction: column;
-                gap: 10px;
-            }
-        }
-    </style>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
 </head>
-<body>
-    <div class="email-container">
-        <div class="header">
-            <h1>Welcome to Backlify AI</h1>
-            <p>Your AI-powered backend journey starts now</p>
-        </div>
-        
-        <div class="content">
-            <h2>Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
-            
-            <p>
-                Welcome to Backlify AI! We're excited to have you on board. Our goal is to make backend development simple and seamless, so you can focus on what you do best: building amazing applications.
-            </p>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4; line-height: 1.6;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">Welcome to Backlify AI</h1>
+                            <p style="margin: 15px 0 0; color: #ffffff; font-size: 18px; opacity: 0.95;">Your AI-powered backend journey starts now</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <h2 style="margin: 0 0 25px; color: #333333; font-size: 24px; font-weight: bold;">Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
+                            
+                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">
+                                Welcome to Backlify AI! We're excited to have you on board. Our goal is to make backend development simple and seamless, so you can focus on what you do best: building amazing applications.
+                            </p>
 
-            <div class="card">
-                <h3 class="card-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    Your Account Details
-                </h3>
-                <div class="plan-item">
-                    <span class="plan-label">Username</span>
-                    <span class="plan-value">${userData.username || 'N/A'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Email</span>
-                    <span class="plan-value">${userData.email}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Registration Date</span>
-                    <span class="plan-value">${currentDate}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Account Status</span>
-                    <span class="plan-value active">✅ Active</span>
-                </div>
-            </div>
+                            <!-- Account Details Card -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin: 30px 0;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #00D2FF; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">⚡</span>
+                                            Your Account Details
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Username</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${userData.username || 'N/A'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Email</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${userData.email}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Registration Date</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${currentDate}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Account Status</td>
+                                                            <td style="color: #10B981; font-size: 14px; font-weight: 700; text-align: right;">✅ Active</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
 
-            <div class="card">
-                <h3 class="card-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crown"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21l-2.99 1.42c-.53.24-1.04.24-1.57 0L2.97 18.21c-.5-.23-.97-.66-.97-1.21v-2.34"/><path d="M14 14.66V17c0 .55.47.98.97 1.21l2.99 1.42c.53.24 1.04.24 1.57 0L21.03 18.21c.5-.23.97-.66.97-1.21v-2.34"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-                    Your Basic Plan
-                </h3>
-                <div class="plan-item">
-                    <span class="plan-label">Plan Name</span>
-                    <span class="plan-value">Basic Plan</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Price</span>
-                    <span class="plan-value">Free</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Features</span>
-                    <ul style="list-style-type: none; padding: 0; margin: 0; text-align: right;">
-                        <li class="plan-value">Basic API access</li>
-                        <li class="plan-value">1000 requests/month</li>
-                        <li class="plan-value">Email support</li>
-                    </ul>
-                </div>
-            </div>
+                            <!-- Basic Plan Card -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin: 30px 0;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #00D2FF; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">👑</span>
+                                            Your Basic Plan
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Plan Name</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">Basic Plan</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Price</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">Free</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Features</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">
+                                                                <div style="text-align: right;">
+                                                                    <div>Basic API access</div>
+                                                                    <div>1000 requests/month</div>
+                                                                    <div>Email support</div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
 
-            <p>
-                To get started, you can easily create your first API with just a few clicks from your dashboard. Simply describe the data or service you need, and our AI will generate a fully functional API for you. It's that simple!
-            </p>
+                            <p style="margin: 30px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                                To get started, you can easily create your first API with just a few clicks from your dashboard. Simply describe the data or service you need, and our AI will generate a fully functional API for you. It's that simple!
+                            </p>
 
-            <a href="https://backlify.app/dashboard" class="cta-button">
-                Get Started
-            </a>
-            
-        </div>
-        
-        <div class="footer">
-            <p><strong>Cheers,</strong></p>
-            <p>The Backlify AI Team</p>
-            <div class="footer-links">
-                <a href="https://backlify.app/docs" class="footer-link">Documentation</a>
-                <a href="https://backlify.app/support" class="footer-link">Support</a>
-                <a href="https://backlify.app/contact" class="footer-link">Contact Us</a>
-            </div>
-            <p style="margin-top: 20px; font-size: 13px; opacity: 0.7;">© 2025 Backlify AI. All rights reserved.</p>
-        </div>
-    </div>
+                            <!-- CTA Button -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center" style="padding: 20px 0;">
+                                        <a href="https://backlify.app/dashboard" style="display: inline-block; background: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%); color: #ffffff; text-decoration: none; padding: 18px 35px; border-radius: 8px; font-weight: bold; font-size: 16px; text-align: center; box-shadow: 0 4px 12px rgba(0, 210, 255, 0.3);">
+                                            Get Started
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-radius: 0 0 8px 8px; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0 0 10px; color: #666666; font-size: 16px;"><strong>Cheers,</strong></p>
+                            <p style="margin: 0 0 20px; color: #666666; font-size: 16px;">The Backlify AI Team</p>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <a href="https://backlify.app/docs" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Documentation</a>
+                                        <a href="https://backlify.app/support" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Support</a>
+                                        <a href="https://backlify.app/contact" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Contact Us</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin: 20px 0 0; font-size: 12px; color: #999999;">© 2025 Backlify AI. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>`;
   }
@@ -820,325 +681,195 @@ class EmailService {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plan Upgraded - Backlify AI</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-dark: #0B0D17;
-            --bg-card: #1A1D29;
-            --text-primary: #FFFFFF;
-            --text-secondary: #B8BCC8;
-            --accent-primary: #00D2FF;
-            --accent-secondary: #3A7BD5;
-            --accent-tertiary: #8B5CF6;
-            --success-color: #10B981;
-            --border-color: rgba(255, 255, 255, 0.1);
-            --gradient-primary: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%);
-            --gradient-secondary: linear-gradient(135deg, rgba(0, 210, 255, 0.1) 0%, rgba(58, 123, 213, 0.1) 100%);
-            --gradient-success: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(0, 210, 255, 0.1) 100%);
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            line-height: 1.6;
-            color: var(--text-primary);
-            background: linear-gradient(135deg, #0B0D17 0%, #1A1D29 100%);
-            margin: 0;
-            padding: 20px;
-            min-height: 100vh;
-        }
-
-        .email-container {
-            max-width: 600px;
-            width: 100%;
-            margin: 0 auto;
-            background: var(--bg-card);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            border: 1px solid var(--border-color);
-        }
-
-        .header {
-            background: var(--gradient-primary);
-            padding: 50px 40px;
-            text-align: center;
-            color: white;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            animation: shimmer 4s ease-in-out infinite;
-        }
-
-        @keyframes shimmer {
-            0%, 100% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-            50% { transform: translateX(100%) translateY(100%) rotate(45deg); }
-        }
-
-        .header h1 {
-            font-size: 36px;
-            font-weight: 800;
-            margin: 0;
-            position: relative;
-            z-index: 1;
-            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-        }
-
-        .header p {
-            font-size: 20px;
-            font-weight: 500;
-            opacity: 0.95;
-            margin: 15px 0 0;
-            position: relative;
-            z-index: 1;
-        }
-
-        .content {
-            padding: 40px;
-            text-align: left;
-        }
-
-        .content h2 {
-            font-size: 28px;
-            color: var(--text-primary);
-            margin-top: 0;
-            margin-bottom: 25px;
-            font-weight: 700;
-            background: var(--gradient-primary);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .content p {
-            font-size: 17px;
-            color: var(--text-secondary);
-            margin-bottom: 30px;
-            line-height: 1.7;
-        }
-
-        .card {
-            background: var(--gradient-secondary);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            margin: 30px 0;
-            backdrop-filter: blur(10px);
-        }
-
-        .card-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--accent-primary);
-            margin-top: 0;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .plan-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .plan-item:last-child {
-            border-bottom: none;
-        }
-
-        .plan-label {
-            color: var(--text-secondary);
-            font-size: 15px;
-            font-weight: 500;
-        }
-
-        .plan-value {
-            color: var(--text-primary);
-            font-weight: 600;
-            font-size: 15px;
-        }
-
-        .plan-value.active {
-            color: var(--success-color);
-            font-weight: 700;
-        }
-
-        .cta-button {
-            display: block;
-            width: fit-content;
-            margin: 40px auto 0;
-            background: var(--gradient-primary);
-            color: white;
-            text-decoration: none;
-            padding: 18px 35px;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: 18px;
-            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-
-        .cta-button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 40px rgba(0, 210, 255, 0.4);
-        }
-
-        .footer {
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
-            padding: 40px;
-            text-align: center;
-            font-size: 15px;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .footer p {
-            margin: 0;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-
-        .footer-links {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .footer-link {
-            color: var(--accent-primary);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s ease;
-        }
-
-        .footer-link:hover {
-            color: var(--accent-secondary);
-        }
-
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
-            .email-container {
-                border-radius: 12px;
-            }
-            .header, .content, .footer {
-                padding: 30px 20px;
-            }
-            .header h1 {
-                font-size: 30px;
-            }
-            .header p {
-                font-size: 18px;
-            }
-            .content h2 {
-                font-size: 24px;
-            }
-            .footer-links {
-                flex-direction: column;
-                gap: 10px;
-            }
-        }
-    </style>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
 </head>
-<body>
-    <div class="email-container">
-        <div class="header">
-            <h1>🎉 Plan Upgraded!</h1>
-            <p>You've unlocked new possibilities</p>
-        </div>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4; line-height: 1.6;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">🎉 Plan Upgraded!</h1>
+                            <p style="margin: 15px 0 0; color: #ffffff; font-size: 18px; opacity: 0.95;">You've unlocked new possibilities</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <h2 style="margin: 0 0 25px; color: #333333; font-size: 24px; font-weight: bold;">Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
 
-        <div class="content">
-            <h2>Hey ${userData.username || userData.email?.split('@')[0] || 'there'}!</h2>
+                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">
+                                Congratulations! Your Backlify AI plan has been successfully upgraded. You now have access to more powerful features and higher limits to supercharge your backend development.
+                            </p>
 
-            <p>
-                Congratulations! Your Backlify AI plan has been successfully upgraded. You now have access to more powerful features and higher limits to supercharge your backend development.
-            </p>
+                            <!-- Plan Details Card -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin: 30px 0;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #00D2FF; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">📈</span>
+                                            Your New Plan Details
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Plan Name</td>
+                                                            <td style="color: #10B981; font-size: 14px; font-weight: 700; text-align: right;">${planData.name || 'Upgraded Plan'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Upgrade Date</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${currentDate}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Status</td>
+                                                            <td style="color: #10B981; font-size: 14px; font-weight: 700; text-align: right;">✅ Active</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Amount Paid</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.amount ? planData.amount + ' ' + (planData.currency || 'AZN') : 'N/A'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Subscription Expires</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.expirationDate || 'N/A'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Payment Method</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.paymentMethod || 'Epoint'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
 
-            <div class="card">
-                <h3 class="card-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-                    Your New Plan Details
-                </h3>
-                <div class="plan-item">
-                    <span class="plan-label">Plan Name</span>
-                    <span class="plan-value active">${planData.name || 'Upgraded Plan'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Upgrade Date</span>
-                    <span class="plan-value">${currentDate}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Status</span>
-                    <span class="plan-value active">✅ Active</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Amount Paid</span>
-                    <span class="plan-value">${planData.amount ? planData.amount + ' ' + (planData.currency || 'AZN') : 'N/A'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Subscription Expires</span>
-                    <span class="plan-value">${planData.expirationDate || 'N/A'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Payment Method</span>
-                    <span class="plan-value">${planData.paymentMethod || 'Epoint'}</span>
-                </div>
-            </div>
+                            <!-- Features Card -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin: 30px 0;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #00D2FF; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">⭐</span>
+                                            New Features Unlocked
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">API Requests</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.requestsLimit || 'Unlimited'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Projects</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.projectsLimit || 'Unlimited'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #666666; font-size: 14px; font-weight: 500;">Support Level</td>
+                                                            <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">${planData.supportLevel || 'Priority Support'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 30px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                                Ready to explore your new features? Head over to your dashboard and start building with your enhanced capabilities!
+                            </p>
 
-            <div class="card">
-                <h3 class="card-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    New Features Unlocked
-                </h3>
-                <div class="plan-item">
-                    <span class="plan-label">API Requests</span>
-                    <span class="plan-value">${planData.requestsLimit || 'Unlimited'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Projects</span>
-                    <span class="plan-value">${planData.projectsLimit || 'Unlimited'}</span>
-                </div>
-                <div class="plan-item">
-                    <span class="plan-label">Support Level</span>
-                    <span class="plan-value">${planData.supportLevel || 'Priority Support'}</span>
-                </div>
-            </div>
-            
-            <p>
-                Ready to explore your new features? Head over to your dashboard and start building with your enhanced capabilities!
-            </p>
-
-            <a href="https://backlify.app" class="cta-button">
-                🚀 Go to Dashboard
-            </a>
-
-        </div>
-
-        <div class="footer">
-            <p><strong>Happy Building!</strong></p>
-            <p>The Backlify AI Team</p>
-            <div class="footer-links">
-                <a href="https://backlify.app/docs" class="footer-link">Documentation</a>
-                <a href="https://backlify.app/support" class="footer-link">Support</a>
-                <a href="https://backlify.app/contact" class="footer-link">Contact Us</a>
-            </div>
-            <p style="margin-top: 20px; font-size: 13px; opacity: 0.7;">© 2025 Backlify AI. All rights reserved.</p>
-        </div>
-    </div>
+                            <!-- CTA Button -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center" style="padding: 20px 0;">
+                                        <a href="https://backlify.app" style="display: inline-block; background: linear-gradient(135deg, #00D2FF 0%, #3A7BD5 50%, #8B5CF6 100%); color: #ffffff; text-decoration: none; padding: 18px 35px; border-radius: 8px; font-weight: bold; font-size: 16px; text-align: center; box-shadow: 0 4px 12px rgba(0, 210, 255, 0.3);">
+                                            🚀 Go to Dashboard
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-radius: 0 0 8px 8px; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0 0 10px; color: #666666; font-size: 16px;"><strong>Happy Building!</strong></p>
+                            <p style="margin: 0 0 20px; color: #666666; font-size: 16px;">The Backlify AI Team</p>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <a href="https://backlify.app/docs" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Documentation</a>
+                                        <a href="https://backlify.app/support" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Support</a>
+                                        <a href="https://backlify.app/contact" style="color: #00D2FF; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Contact Us</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin: 20px 0 0; font-size: 12px; color: #999999;">© 2025 Backlify AI. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
 `;
