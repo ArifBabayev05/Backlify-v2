@@ -607,6 +607,7 @@ class EmailService {
                                                             <td style="color: #333333; font-size: 14px; font-weight: 600; text-align: right;">
                                                                 <div style="text-align: right;">
                                                                     <div>Basic API access</div>
+                                                                    <div>2 Projects</div>
                                                                     <div>1000 requests/month</div>
                                                                     <div>Email support</div>
                                                                 </div>
@@ -952,6 +953,415 @@ class EmailService {
       return await this.sendFlexibleEmail(emailData);
     } catch (error) {
       console.error('Error sending upgrade email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Generate threat report email HTML template
+   * @param {object} threatData - Threat analysis data
+   * @returns {string} HTML template
+   */
+  generateThreatReportTemplate(threatData) {
+    const {
+      id,
+      detected_user,
+      machine_name,
+      risk_score,
+      risk_likelihood,
+      risk_justification,
+      confidence,
+      summary_bullets,
+      top_indicators,
+      recommendations,
+      behavior_breakdown,
+      alert_flags,
+      time_from,
+      time_to,
+      timestamp_created
+    } = threatData;
+
+    // Determine threat level styling
+    const getThreatLevelStyle = (level) => {
+      switch (level.toLowerCase()) {
+        case 'high':
+          return {
+            color: '#DC2626',
+            bgColor: '#FEF2F2',
+            borderColor: '#FECACA',
+            icon: '🚨'
+          };
+        case 'medium':
+          return {
+            color: '#D97706',
+            bgColor: '#FFFBEB',
+            borderColor: '#FED7AA',
+            icon: '⚠️'
+          };
+        case 'low':
+          return {
+            color: '#059669',
+            bgColor: '#ECFDF5',
+            borderColor: '#A7F3D0',
+            icon: 'ℹ️'
+          };
+        default:
+          return {
+            color: '#6B7280',
+            bgColor: '#F9FAFB',
+            borderColor: '#E5E7EB',
+            icon: '📊'
+          };
+      }
+    };
+
+    const threatStyle = getThreatLevelStyle(risk_likelihood);
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Threat Report - ${risk_likelihood.toUpperCase()} Risk Detected</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4; line-height: 1.6;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="700" style="max-width: 700px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #1F2937 0%, #374151 50%, #4B5563 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                                ${threatStyle.icon} Security Threat Report
+                            </h1>
+                            <p style="margin: 15px 0 0; color: #ffffff; font-size: 16px; opacity: 0.95;">Automated Security Analysis Alert</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Threat Level Alert -->
+                    <tr>
+                        <td style="padding: 30px; background-color: ${threatStyle.bgColor}; border-left: 4px solid ${threatStyle.color};">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <h2 style="margin: 0 0 10px; color: ${threatStyle.color}; font-size: 24px; font-weight: bold;">
+                                            ${threatStyle.icon} ${risk_likelihood.toUpperCase()} THREAT DETECTED
+                                        </h2>
+                                        <p style="margin: 0; color: #374151; font-size: 16px; font-weight: 500;">
+                                            Risk Score: <span style="color: ${threatStyle.color}; font-weight: bold;">${risk_score}/100</span> | 
+                                            Confidence: <span style="color: ${threatStyle.color}; font-weight: bold;">${Math.round(confidence * 100)}%</span>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            
+                            <!-- Incident Details -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">🔍</span>
+                                            Incident Details
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #6B7280; font-size: 14px; font-weight: 500;">Analysis ID</td>
+                                                            <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right; font-family: monospace;">${id}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #6B7280; font-size: 14px; font-weight: 500;">Detected User</td>
+                                                            <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right;">${detected_user || 'Unknown'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #6B7280; font-size: 14px; font-weight: 500;">Machine Name</td>
+                                                            <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right;">${machine_name || 'Unknown'}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #6B7280; font-size: 14px; font-weight: 500;">Time Range</td>
+                                                            <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right;">
+                                                                ${new Date(time_from).toLocaleString()} - ${new Date(time_to).toLocaleString()}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                        <tr>
+                                                            <td style="color: #6B7280; font-size: 14px; font-weight: 500;">Report Generated</td>
+                                                            <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right;">${currentDate}</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Risk Assessment -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">📊</span>
+                                            Risk Assessment
+                                        </h3>
+                                        <p style="margin: 0 0 15px; color: #374151; font-size: 16px; line-height: 1.6;">
+                                            <strong>Justification:</strong> ${risk_justification}
+                                        </p>
+                                        <div style="background-color: #ffffff; padding: 15px; border-radius: 6px; border-left: 4px solid ${threatStyle.color};">
+                                            <p style="margin: 0; color: #374151; font-size: 14px; font-style: italic;">
+                                                "This analysis indicates a ${risk_likelihood.toLowerCase()} level threat with ${Math.round(confidence * 100)}% confidence based on the detected security events."
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Summary -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">📋</span>
+                                            Summary
+                                        </h3>
+                                        <ul style="margin: 0; padding-left: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
+                                            ${summary_bullets.map(bullet => `<li style="margin-bottom: 8px;">${bullet}</li>`).join('')}
+                                        </ul>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Top Indicators -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">🎯</span>
+                                            Top Threat Indicators
+                                        </h3>
+                                        <ol style="margin: 0; padding-left: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
+                                            ${top_indicators.map(indicator => `<li style="margin-bottom: 8px;">${indicator}</li>`).join('')}
+                                        </ol>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Recommendations -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">🛡️</span>
+                                            Recommended Actions
+                                        </h3>
+                                        <ol style="margin: 0; padding-left: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
+                                            ${recommendations.map(rec => `<li style="margin-bottom: 8px;">${rec}</li>`).join('')}
+                                        </ol>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Alert Flags -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">🚩</span>
+                                            Alert Flags
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            ${Object.entries(alert_flags).map(([flag, value]) => `
+                                                <tr>
+                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                            <tr>
+                                                                <td style="color: #6B7280; font-size: 14px; font-weight: 500; text-transform: capitalize;">${flag.replace(/_/g, ' ')}</td>
+                                                                <td style="text-align: right;">
+                                                                    <span style="color: ${value ? '#DC2626' : '#059669'}; font-weight: bold; font-size: 14px;">
+                                                                        ${value ? '🚨 TRIGGERED' : '✅ CLEAR'}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Behavior Breakdown -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        <h3 style="margin: 0 0 20px; color: #1F2937; font-size: 18px; font-weight: bold; display: flex; align-items: center;">
+                                            <span style="margin-right: 10px;">📈</span>
+                                            Event Breakdown
+                                        </h3>
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                            ${Object.entries(behavior_breakdown).map(([event, count]) => `
+                                                <tr>
+                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                            <tr>
+                                                                <td style="color: #6B7280; font-size: 14px; font-weight: 500; text-transform: capitalize;">${event.replace(/_/g, ' ')}</td>
+                                                                <td style="color: #1F2937; font-size: 14px; font-weight: 600; text-align: right;">${count}</td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Action Required -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: ${threatStyle.bgColor}; border: 2px solid ${threatStyle.color}; border-radius: 8px;">
+                                <tr>
+                                    <td style="padding: 25px; text-align: center;">
+                                        <h3 style="margin: 0 0 15px; color: ${threatStyle.color}; font-size: 20px; font-weight: bold;">
+                                            ${threatStyle.icon} IMMEDIATE ACTION REQUIRED
+                                        </h3>
+                                        <p style="margin: 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                                            This ${risk_likelihood.toLowerCase()} level threat requires immediate attention. 
+                                            Please review the analysis and take appropriate action based on the recommendations provided.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #1F2937; padding: 30px; text-align: center; border-radius: 0 0 8px 8px;">
+                            <p style="margin: 0 0 10px; color: #ffffff; font-size: 16px;"><strong>Backlify Security Analysis System</strong></p>
+                            <p style="margin: 0 0 20px; color: #9CA3AF; font-size: 14px;">Automated Threat Detection & Reporting</p>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <a href="https://backlify.app/security" style="color: #60A5FA; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Security Dashboard</a>
+                                        <a href="https://backlify.app/support" style="color: #60A5FA; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Support</a>
+                                        <a href="https://backlify.app/contact" style="color: #60A5FA; text-decoration: none; font-weight: 500; margin: 0 15px; font-size: 14px;">Contact</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin: 20px 0 0; font-size: 12px; color: #9CA3AF;">© 2025 Backlify AI. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+  }
+
+  /**
+   * Send threat report email to admin
+   * @param {object} threatData - Threat analysis data
+   * @returns {object} Result
+   */
+  async sendThreatReportEmail(threatData) {
+    try {
+      console.log('=== SENDING THREAT REPORT EMAIL ===');
+      console.log('Threat data:', threatData);
+      console.log('SMTP Configuration Check:');
+      console.log('- SMTP_HOST:', process.env.SMTP_HOST);
+      console.log('- SMTP_PORT:', process.env.SMTP_PORT);
+      console.log('- SMTP_USER:', process.env.SMTP_USER);
+      console.log('- SMTP_PASS exists:', !!process.env.SMTP_PASS);
+
+      // Check if SMTP is configured
+      if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        console.error('❌ SMTP configuration is incomplete!');
+        console.error('Required environment variables: SMTP_HOST, SMTP_USER, SMTP_PASS');
+        return {
+          success: false,
+          error: 'SMTP configuration is incomplete. Please check your environment variables.'
+        };
+      }
+
+      const html = this.generateThreatReportTemplate(threatData);
+      
+      const emailData = {
+        to: 'arifrb@code.edu.az',
+        from: process.env.SMTP_USER, // Use the authenticated SMTP user
+        subject: `🚨 ${threatData.risk_likelihood.toUpperCase()} THREAT DETECTED - ${threatData.detected_user || 'Unknown User'} (${threatData.machine_name || 'Unknown Machine'})`,
+        html: html,
+        
+        metadata: {
+          type: 'threat_report',
+          threatLevel: threatData.risk_likelihood,
+          riskScore: threatData.risk_score,
+          analysisId: threatData.id,
+          detectedUser: threatData.detected_user,
+          machineName: threatData.machine_name,
+          reportDate: new Date().toISOString()
+        }
+      };
+
+      console.log('Sending threat report email with data:', {
+        to: emailData.to,
+        from: emailData.from,
+        subject: emailData.subject,
+        hasHtml: !!emailData.html
+      });
+
+      return await this.sendFlexibleEmail(emailData);
+    } catch (error) {
+      console.error('Error sending threat report email:', error);
       return { success: false, error: error.message };
     }
   }

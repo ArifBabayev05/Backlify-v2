@@ -1,0 +1,38 @@
+# Security Log Analysis API - Quick Test Commands
+
+# Test 1: Analyze logs (POST)
+curl -X POST http://localhost:3000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d @test-data/security-logs.json
+
+# Test 2: Get all analyses (GET)
+curl -X GET http://localhost:3000/api/analysis
+
+# Test 3: Get specific analysis by ID (replace with actual ID from step 1)
+curl -X GET http://localhost:3000/api/analysis/4625-280795
+
+# Test 4: Filter by risk level
+curl -X GET "http://localhost:3000/api/analysis?risk_level=Medium"
+
+# Test 5: Filter by user
+curl -X GET "http://localhost:3000/api/analysis?user=Pikachu"
+
+# Test 6: Filter by machine
+curl -X GET "http://localhost:3000/api/analysis?machine=DESKTOP-9EHJI2B"
+
+# Test 7: Test pagination
+curl -X GET "http://localhost:3000/api/analysis?limit=5&offset=0"
+
+# Test 8: Test sorting
+curl -X GET "http://localhost:3000/api/analysis?sort_by=risk_score&sort_order=desc"
+
+# Test 9: Error handling - invalid ID
+curl -X GET http://localhost:3000/api/analysis/invalid-id
+
+# Test 10: Error handling - empty body
+curl -X POST http://localhost:3000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Health check
+curl -X GET http://localhost:3000/health

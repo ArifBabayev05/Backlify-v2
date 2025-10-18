@@ -1,103 +1,64 @@
-const axios = require('axios');
+const EmailService = require('./src/services/emailService');
 
-const BASE_URL = 'http://localhost:3000';
-
-async function testEmailEndpoints() {
-  console.log('🧪 Testing Email Endpoints...\n');
-
-  try {
-    // Test 1: General email
-    console.log('1. Testing general email endpoint...');
-    const generalEmailResponse = await axios.post(`${BASE_URL}/api/email/send`, {
-      subject: 'Test Email from API',
-      message: 'This is a test email sent from the Backlify API.',
-      fromEmail: 'test@example.com',
-      fromName: 'Test User',
-      type: 'general',
-      metadata: {
-        testType: 'general',
-        timestamp: new Date().toISOString()
-      }
-    });
-    console.log('✅ General email sent:', generalEmailResponse.data);
-
-    // Test 2: Contact form email
-    console.log('\n2. Testing contact form endpoint...');
-    const contactEmailResponse = await axios.post(`${BASE_URL}/api/email/contact`, {
-      name: 'John Doe',
-      email: 'john.doe@example.com',
-      subject: 'Contact Form Test',
-      message: 'This is a test contact form submission.',
-      company: 'Test Company',
-      phone: '+1234567890'
-    });
-    console.log('✅ Contact email sent:', contactEmailResponse.data);
-
-    // Test 3: Support request email
-    console.log('\n3. Testing support request endpoint...');
-    const supportEmailResponse = await axios.post(`${BASE_URL}/api/email/support`, {
-      email: 'support@example.com',
-      subject: 'Support Request Test',
-      message: 'I need help with my account.',
-      priority: 'medium',
-      category: 'account',
-      userId: 'test-user-123'
-    });
-    console.log('✅ Support email sent:', supportEmailResponse.data);
-
-    // Test 4: Feedback email
-    console.log('\n4. Testing feedback endpoint...');
-    const feedbackEmailResponse = await axios.post(`${BASE_URL}/api/email/feedback`, {
-      email: 'feedback@example.com',
-      subject: 'Feedback Test',
-      message: 'Great service! Keep up the good work.',
-      rating: '5',
-      category: 'general',
-      userId: 'test-user-123'
-    });
-    console.log('✅ Feedback email sent:', feedbackEmailResponse.data);
-
-    // Test 5: Custom email
-    console.log('\n5. Testing custom email endpoint...');
-    const customEmailResponse = await axios.post(`${BASE_URL}/api/email/custom`, {
-      subject: 'Custom Email Test',
-      message: 'This is a custom email with special formatting.',
-      fromEmail: 'custom@example.com',
-      fromName: 'Custom User',
-      type: 'custom',
-      template: 'special',
-      metadata: {
-        customField: 'custom value',
-        priority: 'high'
-      }
-    });
-    console.log('✅ Custom email sent:', customEmailResponse.data);
-
-    console.log('\n🎉 All email tests completed successfully!');
-
-  } catch (error) {
-    console.error('❌ Test failed:', error.response?.data || error.message);
-  }
-}
-
-// Test email configuration (requires auth)
-async function testEmailConfiguration() {
-  console.log('\n🔧 Testing email configuration...');
+async function testEmail() {
+  console.log('🧪 Testing Email Configuration...');
+  console.log('================================');
   
+  // Check environment variables
+  console.log('Environment Variables:');
+  console.log('- SMTP_HOST:', process.env.SMTP_HOST || 'NOT SET');
+  console.log('- SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET');
+  console.log('- SMTP_USER:', process.env.SMTP_USER || 'NOT SET');
+  console.log('- SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET');
+  console.log('');
+
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('❌ SMTP configuration is incomplete!');
+    console.error('Please set the following environment variables:');
+    console.error('- SMTP_HOST (e.g., smtp.gmail.com)');
+    console.error('- SMTP_PORT (e.g., 587 or 465)');
+    console.error('- SMTP_USER (your email address)');
+    console.error('- SMTP_PASS (your email password or app password)');
+    return;
+  }
+
   try {
-    // Note: This requires authentication, so it might fail without proper auth
-    const configResponse = await axios.get(`${BASE_URL}/api/email/test`);
-    console.log('✅ Email configuration test:', configResponse.data);
+    // Test basic email sending
+    console.log('Sending test email...');
+    
+     const testEmailData = {
+       to: 'arifrb@code.edu.az',
+       from: process.env.SMTP_USER, // Use the authenticated SMTP user
+       subject: '🧪 Email Test - Backlify Security System',
+       html: `
+         <h2>Email Configuration Test</h2>
+         <p>This is a test email to verify that the email service is working correctly.</p>
+         <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+         <p><strong>System:</strong> Backlify Security Analysis</p>
+         <p><strong>Recipient:</strong> arifrb@code.edu.az</p>
+         <p><strong>Sender:</strong> ${process.env.SMTP_USER}</p>
+         <p><strong>Status:</strong> ✅ Email service is working!</p>
+       `,
+       replyTo: 'security@backlify.app', // Set reply-to for responses
+       metadata: {
+         type: 'test',
+         timestamp: new Date().toISOString()
+       }
+     };
+
+    const result = await EmailService.sendFlexibleEmail(testEmailData);
+    
+    if (result.success) {
+      console.log('✅ Email sent successfully!');
+      console.log('Message ID:', result.messageId);
+      console.log('Check your email inbox at arifrb@code.edu.az');
+    } else {
+      console.error('❌ Email sending failed:', result.error);
+    }
   } catch (error) {
-    console.log('⚠️ Email configuration test failed (expected if not authenticated):', error.response?.data?.message || error.message);
+    console.error('❌ Error testing email:', error.message);
   }
 }
 
-// Run tests
-if (require.main === module) {
-  testEmailEndpoints()
-    .then(() => testEmailConfiguration())
-    .catch(console.error);
-}
-
-module.exports = { testEmailEndpoints, testEmailConfiguration };
+// Run the test
+testEmail().catch(console.error);

@@ -130,6 +130,14 @@ emailTablesSetup.createTables().catch(err => {
   console.warn('Email features might not work correctly');
 });
 
+// Initialize Analysis tables
+const AnalysisTablesSetup = require('./utils/setup/analysisTables');
+const analysisTablesSetup = new AnalysisTablesSetup();
+analysisTablesSetup.createTables().catch(err => {
+  console.error('Error initializing Analysis tables:', err);
+  console.warn('Security log analysis features might not work correctly');
+});
+
 // ========== UNIVERSAL CORS CONFIGURATION ==========
 // This allows ALL origins, methods, and headers to prevent ANY CORS errors
 const universalCorsOptions = {
@@ -1421,8 +1429,8 @@ app.use('/api/:apiId', usageLimitMiddleware.checkRequestLimit(), async (req, res
   try {
     const apiId = req.params.apiId;
     
-    // Skip this middleware for payment routes, health checks, video routes, user routes, usage routes, and email routes
-    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user' || apiId === 'usage' || apiId === 'email') {
+    // Skip this middleware for payment routes, health checks, video routes, user routes, usage routes, email routes, and analysis routes
+    if (apiId === 'payment' || apiId === 'health' || apiId === 'epoint-callback' || apiId === 'epoint' || apiId === 'video' || apiId === 'user' || apiId === 'usage' || apiId === 'email' || apiId === 'analysis') {
       return next();
     }
   
@@ -1861,6 +1869,10 @@ app.use('/api/email', emailRoutes);
 // Add debug routes (for development/testing)
 const debugRoutes = require('./routes/debugRoutes');
 app.use('/debug', debugRoutes);
+
+// Add analysis routes (for security log analysis)
+const analysisRoutes = require('./routes/analysisRoutes');
+app.use('/api/analysis', analysisRoutes);
 
 // Add direct Epoint callback route (public access)
 const PaymentController = require('./controllers/paymentController');
