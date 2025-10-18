@@ -556,14 +556,6 @@ Return only the JSON analysis result according to the schema provided.`;
         timestamp_created: new Date().toISOString(),
         raw_input: rawLogs,
         // Add truncation metadata
-        truncation_metadata: truncationResult ? {
-          was_truncated: truncationResult.truncated,
-          original_log_count: truncationResult.originalCount,
-          final_log_count: truncationResult.finalCount,
-          original_chars: truncationResult.originalChars,
-          final_chars: truncationResult.finalChars,
-          truncation_reason: truncationResult.truncated ? 'AI_LIMIT_EXCEEDED' : 'NONE'
-        } : null
       };
 
       // Try to insert with retry logic for schema cache issues

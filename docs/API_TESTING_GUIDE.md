@@ -4,7 +4,7 @@ This guide provides curl commands and examples for testing the Security Log Anal
 
 ## Base URL
 ```
-http://localhost:3000/api/analysis
+https://backlify-v2.onrender.com/api/analysis
 ```
 
 ## Test Data
@@ -21,7 +21,7 @@ Analyzes raw Windows Security log JSON(s) using AI and stores the structured res
 ### Single Log Entry
 
 ```bash
-curl -X POST http://localhost:3000/api/analysis \
+curl -X POST https://backlify-v2.onrender.com/api/analysis \
   -H "Content-Type: application/json" \
   -d '{
     "TimeCreated": "2025-10-18T12:53:41.4701566Z",
@@ -40,7 +40,7 @@ curl -X POST http://localhost:3000/api/analysis \
 ### Multiple Log Entries (Array)
 
 ```bash
-curl -X POST http://localhost:3000/api/analysis \
+curl -X POST https://backlify-v2.onrender.com/api/analysis \
   -H "Content-Type: application/json" \
   -d '[
     {
@@ -162,42 +162,42 @@ Returns all historical analysis results with optional filtering and pagination.
 
 ### Basic Request
 ```bash
-curl -X GET http://localhost:3000/api/analysis
+curl -X GET https://backlify-v2.onrender.com/api/analysis
 ```
 
 ### With Pagination
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?limit=10&offset=0"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?limit=10&offset=0"
 ```
 
 ### Filter by Risk Level
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?risk_level=Medium"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?risk_level=Medium"
 ```
 
 ### Filter by User
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?user=Pikachu"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?user=Pikachu"
 ```
 
 ### Filter by Machine
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?machine=DESKTOP-9EHJI2B"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?machine=DESKTOP-9EHJI2B"
 ```
 
 ### Filter by Date Range
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?from_date=2025-01-01T00:00:00Z&to_date=2025-12-31T23:59:59Z"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?from_date=2025-01-01T00:00:00Z&to_date=2025-12-31T23:59:59Z"
 ```
 
 ### Sort by Risk Score (Descending)
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?sort_by=risk_score&sort_order=desc"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?sort_by=risk_score&sort_order=desc"
 ```
 
 ### Combined Filters
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?risk_level=High&user=Pikachu&limit=5&sort_by=timestamp_created&sort_order=desc"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?risk_level=High&user=Pikachu&limit=5&sort_by=timestamp_created&sort_order=desc"
 ```
 
 ### Expected Response
@@ -246,7 +246,7 @@ Manually sends a threat report email to the admin for a specific analysis.
 
 ### Basic Request
 ```bash
-curl -X POST http://localhost:3000/api/analysis/4625-280795/send-report
+curl -X POST https://backlify-v2.onrender.com/api/analysis/4625-280795/send-report
 ```
 
 ### Expected Response
@@ -276,7 +276,7 @@ Returns a specific analysis result by its unique ID.
 
 ### Basic Request
 ```bash
-curl -X GET http://localhost:3000/api/analysis/4625-280795
+curl -X GET https://backlify-v2.onrender.com/api/analysis/4625-280795
 ```
 
 ### Expected Response
@@ -387,7 +387,7 @@ Each analysis includes truncation metadata:
 
 ### Example: Update AI Limits
 ```bash
-curl -X PUT http://localhost:3000/api/analysis/ai-limits \
+curl -X PUT https://backlify-v2.onrender.com/api/analysis/ai-limits \
   -H "Content-Type: application/json" \
   -d '{
     "maxChars": 6000,
@@ -430,7 +430,7 @@ The system automatically sends threat report emails to `arifrb@code.edu.az` when
 
 ### Invalid Analysis ID
 ```bash
-curl -X GET http://localhost:3000/api/analysis/invalid-id
+curl -X GET https://backlify-v2.onrender.com/api/analysis/invalid-id
 ```
 
 **Expected Response:**
@@ -444,7 +444,7 @@ curl -X GET http://localhost:3000/api/analysis/invalid-id
 
 ### Invalid Risk Level Filter
 ```bash
-curl -X GET "http://localhost:3000/api/analysis?risk_level=Invalid"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?risk_level=Invalid"
 ```
 
 **Expected Response:**
@@ -466,7 +466,7 @@ curl -X GET "http://localhost:3000/api/analysis?risk_level=Invalid"
 
 ### Empty Request Body
 ```bash
-curl -X POST http://localhost:3000/api/analysis \
+curl -X POST https://backlify-v2.onrender.com/api/analysis \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -487,7 +487,7 @@ curl -X POST http://localhost:3000/api/analysis \
 ### Step 1: Analyze Logs
 ```bash
 # First, analyze some logs to create test data
-curl -X POST http://localhost:3000/api/analysis \
+curl -X POST https://backlify-v2.onrender.com/api/analysis \
   -H "Content-Type: application/json" \
   -d '[
     {
@@ -508,34 +508,34 @@ curl -X POST http://localhost:3000/api/analysis \
 ### Step 2: Get All Analyses
 ```bash
 # Get all analysis results
-curl -X GET http://localhost:3000/api/analysis
+curl -X GET https://backlify-v2.onrender.com/api/analysis
 ```
 
 ### Step 3: Get Specific Analysis
 ```bash
 # Get specific analysis by ID (replace with actual ID from step 1)
-curl -X GET http://localhost:3000/api/analysis/4625-280795
+curl -X GET https://backlify-v2.onrender.com/api/analysis/4625-280795
 ```
 
 ### Step 4: Test Filtering
 ```bash
 # Filter by risk level
-curl -X GET "http://localhost:3000/api/analysis?risk_level=Medium"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?risk_level=Medium"
 
 # Filter by user
-curl -X GET "http://localhost:3000/api/analysis?user=Pikachu"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?user=Pikachu"
 
 # Filter by machine
-curl -X GET "http://localhost:3000/api/analysis?machine=DESKTOP-9EHJI2B"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?machine=DESKTOP-9EHJI2B"
 ```
 
 ### Step 5: Test AI Limits Configuration
 ```bash
 # Get current AI limits
-curl -X GET http://localhost:3000/api/analysis/ai-limits
+curl -X GET https://backlify-v2.onrender.com/api/analysis/ai-limits
 
 # Update AI limits (optional)
-curl -X PUT http://localhost:3000/api/analysis/ai-limits \
+curl -X PUT https://backlify-v2.onrender.com/api/analysis/ai-limits \
   -H "Content-Type: application/json" \
   -d '{
     "maxChars": 6000,
@@ -547,13 +547,13 @@ curl -X PUT http://localhost:3000/api/analysis/ai-limits \
 ### Step 6: Test Email Configuration
 ```bash
 # Test email configuration
-curl -X POST http://localhost:3000/api/analysis/test-email
+curl -X POST https://backlify-v2.onrender.com/api/analysis/test-email
 ```
 
 ### Step 7: Test Threat Report Email
 ```bash
 # Send threat report email for specific analysis
-curl -X POST http://localhost:3000/api/analysis/4625-280795/send-report
+curl -X POST https://backlify-v2.onrender.com/api/analysis/4625-280795/send-report
 ```
 
 ---
@@ -563,7 +563,7 @@ curl -X POST http://localhost:3000/api/analysis/4625-280795/send-report
 ### Large Dataset Test
 ```bash
 # Test with multiple log entries
-curl -X POST http://localhost:3000/api/analysis \
+curl -X POST https://backlify-v2.onrender.com/api/analysis \
   -H "Content-Type: application/json" \
   -d @large_log_dataset.json
 ```
@@ -571,9 +571,9 @@ curl -X POST http://localhost:3000/api/analysis \
 ### Pagination Test
 ```bash
 # Test pagination with large result set
-curl -X GET "http://localhost:3000/api/analysis?limit=5&offset=0"
-curl -X GET "http://localhost:3000/api/analysis?limit=5&offset=5"
-curl -X GET "http://localhost:3000/api/analysis?limit=5&offset=10"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?limit=5&offset=0"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?limit=5&offset=5"
+curl -X GET "https://backlify-v2.onrender.com/api/analysis?limit=5&offset=10"
 ```
 
 ---
@@ -582,7 +582,7 @@ curl -X GET "http://localhost:3000/api/analysis?limit=5&offset=10"
 
 ### API Health
 ```bash
-curl -X GET http://localhost:3000/health
+curl -X GET https://backlify-v2.onrender.com/health
 ```
 
 **Expected Response:**
@@ -634,13 +634,13 @@ curl -X GET http://localhost:3000/health
 
 ```bash
 # Check server status
-curl -X GET http://localhost:3000/health
+curl -X GET https://backlify-v2.onrender.com/health
 
 # Test basic connectivity
-curl -X GET http://localhost:3000/api/analysis
+curl -X GET https://backlify-v2.onrender.com/api/analysis
 
 # Check specific endpoint
-curl -X GET http://localhost:3000/api/analysis/4625-280795
+curl -X GET https://backlify-v2.onrender.com/api/analysis/4625-280795
 ```
 
 ---
@@ -651,7 +651,7 @@ curl -X GET http://localhost:3000/api/analysis/4625-280795
 ```bash
 #!/bin/bash
 
-BASE_URL="http://localhost:3000/api/analysis"
+BASE_URL="https://backlify-v2.onrender.com/api/analysis"
 
 echo "🧪 Testing Security Log Analysis API"
 echo "=================================="
@@ -698,7 +698,7 @@ echo "✅ All tests completed!"
 
 ### PowerShell Test Script
 ```powershell
-$baseUrl = "http://localhost:3000/api/analysis"
+$baseUrl = "https://backlify-v2.onrender.com/api/analysis"
 
 Write-Host "🧪 Testing Security Log Analysis API" -ForegroundColor Green
 Write-Host "==================================" -ForegroundColor Green
