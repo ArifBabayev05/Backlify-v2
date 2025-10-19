@@ -38,25 +38,39 @@ class AnalysisController {
         });
       }
 
-      // Analyze logs using the service
-      const result = await this.analysisService.analyzeLogs(rawLogs);
-
-      res.status(201).json({
-        success: true,
-        message: 'Logs analyzed successfully',
-        data: result
-      });
-    } catch (error) {
-      console.error('Error in analyzeLogs controller:', error);
-      
-      if (error.message.includes('AI analysis failed')) {
-        return res.status(500).json({
+      // Basic validation of log entries
+      const invalidLogs = rawLogs.filter(log => !log || typeof log !== 'object');
+      if (invalidLogs.length > 0) {
+        return res.status(400).json({
           success: false,
-          error: 'AI analysis failed',
-          details: error.message
+          error: 'Invalid log format',
+          details: 'All log entries must be valid objects'
         });
       }
 
+      // Analyze logs using the service
+      try {
+        const result = await this.analysisService.analyzeLogs(rawLogs);
+        
+        res.status(201).json({
+          success: true,
+          message: 'Logs analyzed successfully',
+          data: result
+        });
+      } catch (error) {
+        if (error.message.includes('AI analysis failed')) {
+          console.error('AI Analysis Error:', error.message);
+          return res.status(422).json({
+            success: false,
+            error: 'AI Analysis Failed',
+            details: error.message.replace('AI analysis failed: ', '')
+          });
+        }
+        throw error; // Re-throw other errors
+      }
+    } catch (error) {
+      console.error('Error in analyzeLogs controller:', error);
+      
       if (error.message.includes('Database error')) {
         return res.status(500).json({
           success: false,
@@ -67,8 +81,8 @@ class AnalysisController {
 
       res.status(500).json({
         success: false,
-        error: 'Analysis failed',
-        details: error.message
+        error: 'Internal server error',
+        details: 'An unexpected error occurred while processing the logs'
       });
     }
   }

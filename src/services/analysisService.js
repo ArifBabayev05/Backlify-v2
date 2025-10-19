@@ -115,59 +115,105 @@ class AnalysisService {
     const logId = `LOG_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     try {
-      console.log(`[${logId}] Starting analysis of ${rawLogs.length} log entries...`);
+      console.log(`[${logId}] 🚀 Analysis process started`);
+      console.log(`[${logId}] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`[${logId}] 📊 Input: ${rawLogs.length} log entries received`);
+      console.log(`[${logId}] 🕒 Start time: ${new Date(startTime).toISOString()}`);
+      
+      // Log input sample
+      console.log(`[${logId}] 📝 Sample of first log entry:`, 
+        JSON.stringify(rawLogs[0], null, 2));
       
       // Truncate logs to fit AI limits
+      console.log(`[${logId}] 📋 Starting log truncation process...`);
       const truncationResult = this.truncateLogsForAI(rawLogs);
       const processedLogs = truncationResult.logs;
       
+      console.log(`[${logId}] 📊 Truncation results:`);
+      console.log(`[${logId}] ├── Original count: ${truncationResult.originalCount} logs`);
+      console.log(`[${logId}] ├── Final count: ${truncationResult.finalCount} logs`);
+      console.log(`[${logId}] ├── Original size: ${(truncationResult.originalChars / 1024).toFixed(2)} KB`);
+      console.log(`[${logId}] └── Final size: ${(truncationResult.finalChars / 1024).toFixed(2)} KB`);
+      
       if (truncationResult.truncated) {
-        console.log(`[${logId}] ⚠️ Data was truncated for AI processing:`);
-        console.log(`[${logId}] - Original: ${truncationResult.originalCount} logs, ${truncationResult.originalChars} chars`);
-        console.log(`[${logId}] - Final: ${truncationResult.finalCount} logs, ${truncationResult.finalChars} chars`);
+        console.log(`[${logId}] ⚠️ Data was truncated to meet AI limits`);
+        console.log(`[${logId}] ├── Reduction: ${((1 - truncationResult.finalChars / truncationResult.originalChars) * 100).toFixed(1)}%`);
+        console.log(`[${logId}] └── Logs removed: ${truncationResult.originalCount - truncationResult.finalCount}`);
       }
       
-      console.log(`[${logId}] Processed logs preview:`, JSON.stringify(processedLogs.slice(0, 2), null, 2));
-
-      // Prepare the AI prompt
+      // Prepare AI prompts
+      console.log(`[${logId}] 🤖 Preparing AI analysis request...`);
       const systemPrompt = this.getAnalysisSystemPrompt();
       const userPrompt = this.formatLogsForAI(processedLogs);
+      
+      console.log(`[${logId}] 📤 AI Request details:`);
+      console.log(`[${logId}] ├── System prompt length: ${systemPrompt.length} chars`);
+      console.log(`[${logId}] ├── User prompt length: ${userPrompt.length} chars`);
+      console.log(`[${logId}] └── Total request size: ${systemPrompt.length + userPrompt.length} chars`);
 
       // Send to AI for analysis
-      console.log(`[${logId}] Sending logs to AI for analysis...`);
+      console.log(`[${logId}] 🔄 Sending request to AI service...`);
+      const aiRequestStart = Date.now();
       const aiResponse = await this.mistralService.generateCompletion(systemPrompt, userPrompt);
-      console.log(`[${logId}] AI response received (length: ${aiResponse?.length || 0} chars)`);
+      const aiRequestDuration = Date.now() - aiRequestStart;
+      
+      console.log(`[${logId}] ✅ AI response received:`);
+      console.log(`[${logId}] ├── Response time: ${aiRequestDuration}ms`);
+      console.log(`[${logId}] ├── Response length: ${aiResponse?.length || 0} chars`);
+      console.log(`[${logId}] └── Processing rate: ${((aiResponse?.length || 0) / aiRequestDuration).toFixed(2)} chars/ms`);
       
       // Parse AI response
       let analysisResult;
       try {
-        // Clean the response to extract JSON
+        console.log(`[${logId}] 🔍 Parsing AI response...`);
         const cleanedResponse = this.cleanAIResponse(aiResponse);
         analysisResult = JSON.parse(cleanedResponse);
-        console.log(`[${logId}] AI response parsed successfully. Unique ID: ${analysisResult.unique_id}`);
+        console.log(`[${logId}] ✅ Successfully parsed AI response`);
+        console.log(`[${logId}] ├── Analysis ID: ${analysisResult.unique_id}`);
+        console.log(`[${logId}] ├── Risk Score: ${analysisResult.risk_assessment.score}`);
+        console.log(`[${logId}] ├── Risk Level: ${analysisResult.risk_assessment.likelihood}`);
+        console.log(`[${logId}] └── Confidence: ${analysisResult.risk_assessment.confidence}`);
       } catch (parseError) {
-        console.error(`[${logId}] Failed to parse AI response as JSON:`, parseError);
-        console.log(`[${logId}] Raw AI response:`, aiResponse);
+        console.error(`[${logId}] ❌ Failed to parse AI response:`, parseError);
+        console.error(`[${logId}] Raw AI response:`, aiResponse);
         throw new Error('AI analysis failed: Invalid JSON response from AI');
       }
 
-      // Validate the analysis result structure
+      // Validate result structure
+      console.log(`[${logId}] 🔍 Validating analysis result structure...`);
       this.validateAnalysisResult(analysisResult);
-      console.log(`[${logId}] Analysis result validation passed`);
+      console.log(`[${logId}] ✅ Analysis result validation passed`);
 
       // Save to database
-      console.log(`[${logId}] Saving analysis result to database...`);
+      console.log(`[${logId}] 💾 Saving analysis to database...`);
+      const dbStart = Date.now();
       const savedResult = await this.saveAnalysisResult(analysisResult, rawLogs, truncationResult);
+      console.log(`[${logId}] ✅ Database save completed in ${Date.now() - dbStart}ms`);
+      console.log(`[${logId}] ├── Record ID: ${savedResult.id}`);
+      console.log(`[${logId}] └── Original ID: ${savedResult.original_id}`);
       
-      // Send threat report email if threshold is met
-      console.log(`[${logId}] Checking if threat report email should be sent...`);
+      // Check email notifications
+      console.log(`[${logId}] 📧 Checking email notification requirements...`);
+      const emailStart = Date.now();
       await this.sendThreatReportIfNeeded(savedResult);
+      console.log(`[${logId}] ✅ Email check completed in ${Date.now() - emailStart}ms`);
       
-      console.log(`[${logId}] Analysis completed successfully in ${Date.now() - startTime}ms`);
+      // Final timing summary
+      const totalDuration = Date.now() - startTime;
+      console.log(`[${logId}] 📊 Process Summary:`);
+      console.log(`[${logId}] ├── Total duration: ${totalDuration}ms`);
+      console.log(`[${logId}] ├── AI processing: ${aiRequestDuration}ms (${((aiRequestDuration/totalDuration)*100).toFixed(1)}%)`);
+      console.log(`[${logId}] ├── Database ops: ${Date.now() - dbStart}ms (${(((Date.now() - dbStart)/totalDuration)*100).toFixed(1)}%)`);
+      console.log(`[${logId}] └── Email checks: ${Date.now() - emailStart}ms (${(((Date.now() - emailStart)/totalDuration)*100).toFixed(1)}%)`);
+      console.log(`[${logId}] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`[${logId}] ✨ Analysis process completed successfully`);
 
       return savedResult;
     } catch (error) {
-      console.error(`[${logId}] Error in analyzeLogs service after ${Date.now() - startTime}ms:`, error);
+      console.error(`[${logId}] ❌ Error in analyzeLogs service after ${Date.now() - startTime}ms:`);
+      console.error(`[${logId}] ├── Error type: ${error.constructor.name}`);
+      console.error(`[${logId}] ├── Message: ${error.message}`);
+      console.error(`[${logId}] └── Stack: ${error.stack}`);
       throw error;
     }
   }
@@ -486,38 +532,59 @@ Return only the JSON analysis result according to the schema provided.`;
    * @param {Object} result - Analysis result to validate
    */
   validateAnalysisResult(result) {
-    const requiredFields = [
-      'unique_id', 'detected_user', 'machine_name', 'time_range',
-      'summary', 'risk_assessment', 'top_indicators', 'recommendations',
-      'behavior_breakdown', 'chart_summaries', 'alert_flags'
-    ];
+    try {
+      const requiredFields = [
+        'unique_id', 'detected_user', 'machine_name', 'time_range',
+        'summary', 'risk_assessment', 'top_indicators', 'recommendations',
+        'behavior_breakdown', 'chart_summaries', 'alert_flags'
+      ];
 
-    for (const field of requiredFields) {
-      if (!(field in result)) {
-        throw new Error(`AI analysis failed: Missing required field '${field}'`);
+      // Check for missing required fields
+      const missingFields = requiredFields.filter(field => !(field in result));
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
       }
-    }
 
-    // Validate risk assessment
-    if (!result.risk_assessment.score || typeof result.risk_assessment.score !== 'number') {
-      throw new Error('AI analysis failed: Invalid risk score');
-    }
+      // Validate risk assessment
+      if (!result.risk_assessment || typeof result.risk_assessment !== 'object') {
+        throw new Error('Invalid risk_assessment object');
+      }
 
-    if (!['Low', 'Medium', 'High'].includes(result.risk_assessment.likelihood)) {
-      throw new Error('AI analysis failed: Invalid risk likelihood');
-    }
+      // Validate risk score
+      if (typeof result.risk_assessment.score !== 'number' || 
+          isNaN(result.risk_assessment.score) || 
+          result.risk_assessment.score < 0 || 
+          result.risk_assessment.score > 100) {
+        throw new Error('Risk score must be a number between 0 and 100');
+      }
 
-    // Validate arrays
-    if (!Array.isArray(result.summary) || result.summary.length < 2) {
-      throw new Error('AI analysis failed: Summary must be an array with at least 2 items');
-    }
+      // Validate risk likelihood
+      if (!['Low', 'Medium', 'High'].includes(result.risk_assessment.likelihood)) {
+        throw new Error('Risk likelihood must be one of: Low, Medium, High');
+      }
 
-    if (!Array.isArray(result.top_indicators) || result.top_indicators.length !== 3) {
-      throw new Error('AI analysis failed: Top indicators must be an array with exactly 3 items');
-    }
+      // Validate arrays with specific lengths
+      if (!Array.isArray(result.summary) || result.summary.length < 2) {
+        throw new Error('Summary must be an array with at least 2 items');
+      }
 
-    if (!Array.isArray(result.recommendations) || result.recommendations.length !== 3) {
-      throw new Error('AI analysis failed: Recommendations must be an array with exactly 3 items');
+      if (!Array.isArray(result.top_indicators) || result.top_indicators.length !== 3) {
+        throw new Error('Top indicators must be an array with exactly 3 items');
+      }
+
+      if (!Array.isArray(result.recommendations) || result.recommendations.length !== 3) {
+        throw new Error('Recommendations must be an array with exactly 3 items');
+      }
+
+      // Validate time range
+      if (!result.time_range || !result.time_range.from || !result.time_range.to) {
+        throw new Error('Invalid time range format');
+      }
+
+      // If all validations pass, return true
+      return true;
+    } catch (error) {
+      throw new Error(`AI analysis failed: ${error.message}`);
     }
   }
 

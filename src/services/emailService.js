@@ -311,7 +311,6 @@ class EmailService {
   async sendFlexibleEmail(emailData) {
     try {
       console.log('=== FLEXIBLE EMAIL SENDING DEBUG ===');
-      console.log('Email data:', emailData);
       
       const {
         to,
